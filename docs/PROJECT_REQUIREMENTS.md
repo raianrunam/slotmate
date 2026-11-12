@@ -751,10 +751,11 @@ These describe **how well** SlotMate must work, not what it does.
 - [ ] Logging out makes the session unusable.
 
 ### SEC-06 — Rate limit on the public booking form
-**Statement:** The server limits how many booking requests one visitor can send in a short time.
+**Statement:** The server limits how many booking requests one visitor can send to one workspace in a short time. The limit is counted per visitor per workspace, not across all of SlotMate, because many visitors can share one internet address (for example university Wi-Fi).
 **Source:** Decisions D14, D24
 **Acceptance criteria:**
-- [ ] After 5 requests in 10 minutes from the same visitor (identified by internet address), further requests are refused with a "please try again later" message.
+- [ ] After 5 requests in 10 minutes from the same visitor (identified by internet address) to the same workspace, further requests to that workspace are refused with a "please try again later" message.
+- [ ] Requests to one workspace do not count toward the same visitor's limit for any other workspace.
 - [ ] Refused requests are not saved and do not count toward the owner's monthly limit.
 - [ ] The limit is applied on the server and cannot be skipped from the browser.
 - [ ] The limit is built with the existing stack (e.g. a Supabase table). No new service is added without the project owner's approval.
@@ -879,7 +880,7 @@ These answers were approved by the project owner on 2026-11-12. Requirements ref
 | D21 | Performance targets? | Main content within about 3 seconds; lists show 20 items per page. |
 | D22 | Which screen sizes are tested? | 375 px (phone), 768 px (tablet) and 1280 px (desktop). |
 | D23 | How does an owner cancel Pro? | On Stripe's ready-made Customer Portal page, opened from the subscription page. |
-| D24 | What is the exact rate limit on the public form? | At most 5 booking requests per 10 minutes from the same visitor (identified by internet address). Must be built with the existing stack (e.g. a Supabase table). No new services without the project owner's approval. |
+| D24 | What is the exact rate limit on the public form? | At most 5 booking requests per 10 minutes from the same visitor (identified by internet address) to the same workspace. The limit is counted per visitor per workspace, not across all of SlotMate, because many visitors can share one internet address (for example university Wi-Fi). Must be built with the existing stack (e.g. a Supabase table). No new services without the project owner's approval. |
 | D25 | How many items does "Recent booking activity" show? | 5. |
 | D26 | Which widget layouts does Pro offer? | Two: "list" and "grid". |
 | D27 | What is the minimum password length? | 8 characters. Must be enforced in the Supabase Auth settings, not only in the form. |
