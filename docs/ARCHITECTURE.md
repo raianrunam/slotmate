@@ -176,7 +176,7 @@ Outside `src/`:
 3. **Server-only files:** every `actions.ts` and `queries.ts`, and `lib/supabase/`, `lib/stripe/`, `lib/auth.ts`, `lib/rate-limit.ts`, `lib/env.ts`. Each starts with a marker (L5) that makes the build fail if it is ever pulled into browser code.
 4. **Shared files, safe on both sides:** every `schema.ts`, `lib/time/` and `lib/plans.ts`. They contain rules and calculations but no secrets and no database access.
 5. **Features do not reach into each other.** The one planned exception is `embed`, which reuses the booking screens from `public-booking` so the widget and the public page behave identically (EMBED-01).
-6. **The admin connection is used in four places only** (A4): public page reads, booking submission, the rate limit, and the Stripe webhook. Everything else uses the connection that acts as the logged-in owner, so RLS applies.
+6. **The admin connection is used in six places only** (A4): public page reads, booking submission, the rate limit, the Stripe webhook, resource image uploads (A15), and saving the downgrade selection (A18). Everything else uses the connection that acts as the logged-in owner, so RLS applies.
 
 Rule 5 is also what makes parallel development possible later (master prompt section 7): two people working on two features rarely touch the same file.
 
@@ -594,7 +594,7 @@ How the tags were chosen: security, data isolation, the booking loop and billing
 | BILL-06 | Subscription status management | Must-have | Every limit reads it. |
 | BILL-07 | Usage restrictions | Must-have | Security: limits must hold on the server. |
 | BILL-08 | Upgrade | Must-have | Core. |
-| BILL-09 | Cancel and downgrade | Must-have, with one Nice-to-have part | Cancelling, returning to Free and locking the extra items are Must-have. The screen where the owner chooses which items stay active is Nice-to-have. Fallback: SlotMate keeps the oldest workspace and its 3 oldest resources (A18). |
+| BILL-09 | Cancel and downgrade | Must-have | Cancelling, returning to Free, locking the extra items and the screen where the owner chooses which 1 workspace and 3 resources stay active are all Must-have. SlotMate never chooses for the owner; until they choose, every affected item stays locked and nothing is deleted (A18). |
 
 ### Security
 
@@ -639,7 +639,6 @@ How the tags were chosen: security, data isolation, the booking loop and billing
 | ANLT-06 | Date filters | Fixed last 30 days |
 | EMBED-03 | Layout choice | List layout only |
 | EMBED-06 | Live preview | Preview updates after saving |
-| BILL-09 (part) | Selection screen on downgrade | Automatic choice of the oldest items |
 | PERF-02 (part) | Test with 1,000 bookings | Test skipped |
 
 If a fallback is used, the requirement's acceptance criteria are updated in `docs/PROJECT_REQUIREMENTS.md` first, with your approval, and the README lists the feature as simplified.
@@ -657,7 +656,7 @@ All approved by the project owner on 2026-11-12.
 | A1 | The browser never talks to the database directly. All reads and writes go through the Next.js server. | One place to enforce every rule. The login cookie can be hidden from page scripts (AUTH-05). Cost: no live-updating screens, which no requirement asks for. |
 | A2 | Server Actions handle all form submissions. Route Handlers are used only for the Stripe webhook and the email-link landing address. | Server Actions are the Next.js way to handle forms and include a built-in same-site check. The two exceptions are called from outside and need a normal web address. |
 | A3 | Three layers of login protection: the proxy redirect, `requireOwner()` in every dashboard read and action, and RLS in the database. | The Next.js 16 guide says the proxy alone is not enough. RLS is what ISO-01 tests. |
-| A4 | Visitors have no database permissions. Public pages are served by server code that uses the secret key and returns only the fields ISO-02 allows. The secret key is used in four named places: public reads, booking submission, the rate limit, and the Stripe webhook. | The publishable key is visible to everyone. Giving it nothing means nobody can query Supabase around our rules. |
+| A4 | Visitors have no database permissions. Public pages are served by server code that uses the secret key and returns only the fields ISO-02 allows. The secret key is used in six named places: public reads, booking submission, the rate limit, the Stripe webhook, resource image uploads (A15, S1), and the downgrade selection, where a Server Action validates ownership and then calls the protected `apply_downgrade_selection` function (A18, S2). | The publishable key is visible to everyone. Giving it nothing means nobody can query Supabase around our rules. |
 | A5 | A booking submission runs as one database function, in one transaction. | Checking the slot, checking the monthly limit, raising the count and saving the booking must succeed or fail together. |
 | A6 | Hard rules are enforced in the database as well as in server code: plan limits, allowed status changes, and the subscription record being read-only for owners. | An owner's own login could otherwise be used to call the database directly and skip our server. The exact method is decided in Phase 4. |
 | A17 | Code is organized in feature folders, `src/features/<area>/`. | Folders match the requirement areas, and separate features rarely touch the same files, which parallel development needs. |
@@ -691,8 +690,8 @@ All approved by the project owner on 2026-11-12.
 
 | # | Decision | Why |
 |---|---|---|
-| A18 | On downgrade (D20), locking the extra workspaces and resources is Must-have. The selection screen is Nice-to-have, with an automatic choice as fallback. | Keeps the rule safe while allowing the screen to be cut. |
-| A19 | The Nice-to-have list in section 8. | Protects security, the booking loop and billing if time runs short. |
+| A18 | On downgrade (D20), locking the extra workspaces and resources and the selection screen are both Must-have (S2). There is no automatic choice: SlotMate never picks which items stay active. Until the owner makes a valid selection, a safe state applies: every affected workspace and resource is read-only in the dashboard, hidden from the public and cannot receive bookings. The owner can still delete items, and nothing is ever deleted automatically. | Guessing could keep the wrong items active. The safe state protects the Free limits and the owner's data until the owner decides. |
+| A19 | The Nice-to-have list in section 8. The downgrade selection screen is not on it (A18). | Protects security, the booking loop and billing if time runs short. |
 | A20 | Account emails use Supabase's built-in email sending for now. | No new service. See the first risk in section 10. |
 
 ### Extra libraries and tools

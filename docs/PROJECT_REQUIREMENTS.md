@@ -701,6 +701,7 @@ Plan limits apply to the **owner account as a whole**, across all of its workspa
 - [ ] When the period ends (confirmed by a webhook), the owner is on Free and the Free limits apply.
 - [ ] Nothing is deleted on downgrade.
 - [ ] If the owner then has more than 1 workspace or 3 resources, they must choose which 1 workspace and up to 3 resources stay active.
+- [ ] Until the owner chooses, all affected workspaces and resources are read-only, hidden from the public and cannot receive bookings. Nothing is deleted.
 - [ ] The workspaces and resources not chosen are hidden from the public, cannot receive bookings, and are read-only in the dashboard until the owner upgrades again or deletes items to get within the limits.
 
 ---
