@@ -108,6 +108,17 @@ Migrations 3–7 were written as files in one batch, then reviewed by **separate
 
 ---
 
+## Phase 6 — Design the frontend and reusable UI components
+
+**Date:** 2026-11-14.
+
+- `501010f` Housekeeping first: the deny rules in `.claude/settings.json` now block only the real env files (`.env`, `.env.local`, `.env.*.local`, `.env.development`, `.env.production`, `.env.test`), so `.env.example` (names only) is readable, and its URL comment was fixed. The running session kept enforcing the old rule until restarted, so the template was read through the shell.
+- **Plan first**, saved in the notes folder (`phase6-plan.txt`): design direction (clean SaaS, neutral greys plus one indigo accent, light and dark, accessible contrast), colour tokens, fonts (Geist, already used), the component list, every route and the folder structure. The Next.js guides in `node_modules/next/dist/docs` were read before writing code. Two facts shaped the build: this project has Cache Components on, so route params and search params may only be read inside `<Suspense>`; and the installed Next.js 16.4.6 uses the stable `retry` prop in `error.tsx`.
+- `bddc602` The build: shadcn/ui (Radix base, Nova preset, 17 components), design tokens in `globals.css`, `src/lib/plans.ts` (Free 1/3/100 and Pro 5/25/1000, $9.99, mirroring the `plan_limits` table), shared components (header, footer, dashboard sidebar and mobile sheet menu, notification badge, upgrade prompt, form field, empty/error/loading states, 20-per-page pagination, delete confirmation, status badges, plan cards) and the page shells: landing, `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/dashboard` with seven sections, `/book/[slug]`, `/booking/[code]`, `/embed/[slug]`, a `/design` reference page, a 404 and an error page. Every shell says "Placeholder", reads no data and has no login logic. The create-next-app leftovers (favicon, sample SVGs, the old page that contained a personal name) are gone. Feature folders exist with one README line each.
+- `1f222cb` UI checks with Playwright and Chromium (`npm run test:ui`): 88 checks at 375, 768 and 1280 px, with screenshots saved outside the repository.
+- **Independent review** (fresh read-only reviewer; report kept unedited in the notes folder as `phase6-review.txt`, with a record of the fixes). No data access, secrets or Next.js errors were found. It found real accessibility problems, all fixed: focus rings on hand-styled links were about 2:1, form control borders and the unchecked switch about 1.3:1, destructive button text about 4:1, wrong heading levels, tab semantics without panels, the booking time hidden on phones, and a few layout and tap-size problems. Several of my own tests could not fail; the stronger tests then found a real bug (see mistake 18).
+- **New package, checked:** this shadcn version installs a small `cn` package instead of `clsx` and `tailwind-merge`. It belongs to the shadcn-ui organization on GitHub (MIT, no dependencies, maintained by shadcn) and requires Node 22 or newer, so the project's minimum Node version is now 22.
+
 ## Agent mistakes and how they were caught
 
 Honest record of things the agents got wrong. Mistakes 1–9 happened in Phases 1–4a; 10–13 and 16 in Phase 4e (the migration reviews); 15 in Phase 4d; 14 and 17 in Phase 5.
@@ -130,6 +141,11 @@ Honest record of things the agents got wrong. Mistakes 1–9 happened in Phases 
 16. **Reviewers are not always right either.** Reviewers' suggestions were checked, not copied: for example the suggestion to delete only one workspace's old rate-limit rows was declined because it would contradict the documented clean-up rule (`DATABASE.md` section 7.4).
 
 17. **A claim written before it was true.** While writing this log, I wrote that a reviewer had checked the documentation and that its findings were fixed, before any documentation review had been run. The Phase 5 reviewer caught it as its highest-severity finding. The log was corrected, and the sentence now points to the saved report. Lesson: write "done" only after the evidence exists.
+
+18. **Tests that could not fail.** My first UI tests passed for the wrong reasons: the skip-link check accepted a one-pixel box as "visible", and the heading, console and name checks were too loose. The Phase 6 reviewer pointed this out. When I made the tests strict, they found a real bug: Tailwind's `not-sr-only` reset the focused skip link's padding to zero, so it showed as a cramped strip. Lesson: a new test should be seen failing, or at least be asked "what would make this fail?".
+19. **A plan based on an older API.** My plan named `unstable_retry` for the error page. Reading the installed Next.js 16.4.6 docs before coding showed the stable name is `retry` (since 16.3). Caught by following the "read the guide first" rule in `AGENTS.md`.
+20. **A commit that missed the files.** The first `git add` of Phase 6 failed on a folder that had become empty, so that commit held only the deleted starter files and the real source stayed uncommitted. Noticed from `git status` straight afterwards and fixed in the next commit. Lesson: read the command's output, not just the commit message line.
+21. **Setup docs that were wrong.** The README and `TESTING.md` said Node 20.12 would do, but shadcn's `cn` needs Node 22; and the README listed environment variables that `.env.example` does not contain (it has three). Found during Phase 6 and fixed.
 
 ## Agentic techniques used so far
 
@@ -160,9 +176,18 @@ Project and tooling:
 - **`.env.example` comment.** The comment on the project URL variable should read "Project Settings > Data API (or the Connect button)". The agent could not edit it because the deny rule also blocks reading `.env.example`. Either edit the comment by hand, or narrow the deny rule (for example deny `.env.local` and `.env.*.local` only) and let the agent do it.
 - **`npm audit`**: 7 moderate issues, deferred to Phase 17.
 - **Mermaid diagrams** in `docs/DATABASE.md` (one) and `docs/ARCHITECTURE.md` (four) have not been rendered by a tool yet.
-- **Placeholder page and a personal name.** `src/app/page.tsx` (public repository) contains a full personal name in its text. Decide whether that is intended authorship; if not, replace it with the GitHub handle. Not changed here because code changes were out of scope for Phase 5.
+- **Placeholder page and a personal name** (found in Phase 5): resolved in Phase 6. The old placeholder page was replaced by the landing page, which credits only the GitHub handle.
 - **Phase assignments for the planned tests** in `docs/TESTING.md` are a proposal.
-- **Automatic test runs** (a pipeline) do not exist yet; the database tests run by hand against the development project.
+- **Automatic test runs** (a pipeline) do not exist yet; the database tests and the UI checks run by hand.
+
+Interface (Phase 6):
+
+- **Node version:** the minimum is now Node 22 (the `cn` package). `package.json` has no `engines` field and `@types/node` is still `^20`; adding them was outside Phase 6's authorization.
+- **`.env.example`** has only three variables; `NEXT_PUBLIC_APP_URL` and `RATE_LIMIT_SECRET` (and the Stripe ones) should be added to it in the phase that first uses them.
+- **Duplicated styling:** the focus-ring classes and the phone-friendly sizes (`h-10 sm:h-8`) are still copied across components; a shared constant or button/input sizes would be cleaner.
+- **No automatic contrast or axe-core scan** (a new package would need approval); contrast is checked from the tokens in review.
+- **Embed shell:** it follows the viewer's light or dark setting; the owner's saved theme (EMBED-04) arrives in Phase 14. The iframe header rules for `/embed` are also Phase 14.
+- **Placeholders to replace:** the landing page copy is a draft (Phase 18); every dashboard and booking shell is replaced by its real feature phase.
 
 ---
 
