@@ -1,6 +1,6 @@
 # SlotMate — Architecture
 
-Last updated: 2026-11-12 · Phase 3 (Define architecture) · Sources: `docs/MASTER_PROMPT.md`, `docs/PROJECT_REQUIREMENTS.md`
+Last updated: 2026-11-14 · Phase 3 (Define architecture), aligned in Phase 5 · Sources: `docs/MASTER_PROMPT.md`, `docs/PROJECT_REQUIREMENTS.md`
 
 ---
 
@@ -109,6 +109,8 @@ The most important line in the picture is the one that is **missing**: there is 
 
 ## 2. Folder structure under `src/`
 
+**This is the planned layout.** As of 2026-11-14 only `src/app/` (a placeholder home page) and `src/types/` (the generated database types) exist; the rest is built phase by phase.
+
 ```
 src/
 ├── proxy.ts               Runs before every request. Keeps the login cookie fresh
@@ -165,7 +167,8 @@ Outside `src/`:
 | Path | Holds |
 |---|---|
 | `supabase/migrations/` | Database changes as SQL files, so every change is recorded in Git (L6). |
-| `tests/` | Playwright tests. |
+| `tests/db/` | Database tests, run by Playwright's test runner against the development Supabase project (`npm run test:db`; see `docs/TESTING.md`). Browser tests will be added in later phases. |
+| `playwright.config.ts` | Test runner settings. Loads `.env.local` with Node's built-in loader. |
 | `.env.example` | The environment variable **names** with no values (SEC-01). |
 | `docs/` | This document and the other project documents. |
 
@@ -207,12 +210,12 @@ A browser check gives a fast, friendly message. It protects nothing, because a u
 | Check | Browser | Proxy | Server code | Database | Outside service |
 |---|---|---|---|---|---|
 | **Authentication** (AUTH-04, AUTH-05, SEC-03, SEC-05) | Nothing. The login cookie is set so page scripts cannot read it. | Refreshes the login cookie. Sends logged-out requests for `/dashboard` to the login page, before any page is built. | `requireOwner()` is the first line of every dashboard read and every dashboard Server Action. It asks Supabase Auth who the cookie belongs to. A user ID sent by the browser is never trusted. | RLS knows who is logged in and applies to every query made as the owner. | Supabase Auth stores passwords, issues and ends sessions. |
-| **Organization data isolation** (ISO-01, ISO-02, ISO-03) | Nothing. | Nothing. | Dashboard queries run as the logged-in owner, so RLS applies. Public pages use a small set of read functions that return only the fields ISO-02 allows. | **The guarantee.** RLS is switched on for every table. Visitors (people with no login) have no database permissions at all (A4). | Storage: only the server may write images. |
+| **Organization data isolation** (ISO-01, ISO-02, ISO-03) | Nothing. | Nothing. | Dashboard queries run as the logged-in owner, so RLS applies. Public pages are built by server code that reads the tables directly with the secret key (`service_role`), which holds only the table privileges it needs; its read of `bookings` is limited to the columns ISO-03 allows, and the code returns only the fields ISO-02 allows (database decisions Q3 and Q11 in `docs/DATABASE.md`). | **The guarantee.** RLS is switched on for every table. Visitors (people with no login) have no database permissions at all (A4). | Storage: only the server may write images. |
 | **Plan limits** (BILL-07) | Shows usage and locked features. | Nothing. | The Server Action checks the limit first so it can show a friendly "upgrade" message. Pro-only data is never sent to a Free owner (ANLT-03, ANLT-04). | **The guarantee.** The database itself refuses a workspace or resource beyond the limit (A6). The monthly booking limit is checked inside the booking transaction (A5, A7). | — |
 | **Double-booking prevention** (AVAIL-04, AVAIL-05, PERF-03) | Taken slots cannot be picked. | Nothing. | The booking Server Action validates the request, then hands it to one database function. | **The guarantee.** The function re-checks the slot, and a database rule refuses a second pending or approved booking for an overlapping time on the same resource. If two requests arrive together, one wins and the other gets "this time was just taken". | — |
 | **Stripe webhook verification** (SEC-04, BILL-05) | Not involved. | Not involved. | The webhook Route Handler checks the Stripe signature on the raw message **before doing anything else**. No valid signature: error response, nothing changes. | Remembers which message IDs were already handled, so a repeat does nothing (A14). | Stripe signs every message with a secret only Stripe and our server know. |
 | **Rate limiting** (SEC-06) | Nothing. | Nothing. | The first step of the booking Server Action, before validation and before the database function. It uses the internet address that Vercel reports for the request. | Stores short-lived attempt records and counts them (A9). | Vercel sets the visitor's address on the request itself, so the visitor cannot fake it. To be confirmed in Phase 11. |
-| **Input validation** (SEC-02) | Runs the `schema.ts` rules for instant messages. | Nothing. | Runs the **same** `schema.ts` rules again. This is the check that counts. | Basic rules as a safety net (for example "capacity is at least 1"). Details in Phase 4. | — |
+| **Input validation** (SEC-02) | Runs the `schema.ts` rules for instant messages. | Nothing. | Runs the **same** `schema.ts` rules again. This is the check that counts. | Basic rules as a safety net (for example "capacity is at least 1"). Details in `docs/DATABASE.md` section 3. | — |
 | **Text shown safely** (SEC-02) | React shows user text as plain text by default. We never insert user text as raw HTML. | — | The widget background colour is accepted only if it is a valid colour code. | — | — |
 | **Which pages may sit in an iframe** (EMBED-02) | — | — | A response header set in the Next.js configuration: `/embed/...` may be framed by any website; every other page refuses to be framed. | — | — |
 | **Secrets stay on the server** (SEC-01) | Only variables whose name starts with `NEXT_PUBLIC_` ever reach the browser. | — | Secret keys are read only in server-only files (section 2, rule 3). | — | — |
@@ -658,7 +661,7 @@ All approved by the project owner on 2026-11-12.
 | A3 | Three layers of login protection: the proxy redirect, `requireOwner()` in every dashboard read and action, and RLS in the database. | The Next.js 16 guide says the proxy alone is not enough. RLS is what ISO-01 tests. |
 | A4 | Visitors have no database permissions. Public pages are served by server code that uses the secret key and returns only the fields ISO-02 allows. The secret key is used in six named places: public reads, booking submission, the rate limit, the Stripe webhook, resource image uploads (A15, S1), and the downgrade selection, where a Server Action validates ownership and then calls the protected `apply_downgrade_selection` function (A18, S2). | The publishable key is visible to everyone. Giving it nothing means nobody can query Supabase around our rules. |
 | A5 | A booking submission runs as one database function, in one transaction. | Checking the slot, checking the monthly limit, raising the count and saving the booking must succeed or fail together. |
-| A6 | Hard rules are enforced in the database as well as in server code: plan limits, allowed status changes, and the subscription record being read-only for owners. | An owner's own login could otherwise be used to call the database directly and skip our server. The exact method is decided in Phase 4. |
+| A6 | Hard rules are enforced in the database as well as in server code: plan limits, allowed status changes, and the subscription record being read-only for owners. | An owner's own login could otherwise be used to call the database directly and skip our server. The method is documented in `docs/DATABASE.md` sections 5 to 7: constraints, triggers, column-level privileges, RLS and `SECURITY DEFINER` functions. |
 | A17 | Code is organized in feature folders, `src/features/<area>/`. | Folders match the requirement areas, and separate features rarely touch the same files, which parallel development needs. |
 
 ### The three special cases
@@ -705,7 +708,7 @@ These are not named in the master prompt's technology list, so each was approved
 | L3 | `zod` | Lets each input rule be written once and run in both browser and server (SEC-02). |
 | L4 | `date-fns` with `@date-fns/tz` | Reliable time zone and summer-time calculations. `date-fns` arrives anyway with the shadcn/ui calendar. |
 | L5 | `server-only` | A tiny package that makes the build fail if server code holding secrets is pulled into the browser. |
-| L6 | Supabase CLI (development tool) | Keeps database changes as SQL files in the repository and generates TypeScript types. |
+| L6 | Supabase CLI (development tool) | Keeps database changes as SQL files in the repository and generates TypeScript types. Version 3 needs `--remote` for every command that talks to the cloud project; a pushed migration is never edited (`docs/DATABASE.md` section 9). |
 | L7 | Stripe CLI (development tool) | Forwards test webhooks to your own computer during development. |
 
 Deliberately **not** added: a rate-limit service, a scheduled-job service, an email service, a form library, a state-management library, and Stripe's browser library. Adding any of them later needs a new approved decision.
@@ -716,11 +719,20 @@ Deliberately **not** added: a rate-limit service, a scheduled-job service, an em
 
 | Risk | What could happen | When we check |
 |---|---|---|
-| **Supabase's built-in email sending** (A20) | It allows only a few emails per hour and may deliver only to addresses that belong to the Supabase project's team. This could block testing with two separate owners (ISO-01). The current limits have not been verified yet. | Phase 7. If it blocks us, an email provider is proposed as a new decision. |
+| **Supabase's built-in email sending** (A20) | It allows only a few emails per hour and may deliver only to addresses that belong to the Supabase project's team. This could block testing with two separate owners (ISO-01). The current limits have not been verified yet. The database tests are not affected: they create their test accounts through the Auth admin API with the email pre-confirmed, which sends no email. | Phase 7. If it blocks us, an email provider is proposed as a new decision. |
 | **Shared IP addresses** (A9) | Many people on one network share the rate-limit allowance of 5 requests per 10 minutes for the same workspace. | Phase 11 and Phase 17 testing. |
 | **Where Vercel reports the visitor's address** (section 6.3) | The header name and the "cannot be faked" behaviour must be confirmed on the deployed site, not only locally. | Phase 11. |
-| **Clock-change days** (section 5.4) | A missing or repeated hour could produce a wrong slot. | Phase 10, with dedicated tests. |
+| **Clock-change days** (section 5.4) | A missing or repeated hour could produce a wrong slot. The database function's rules are in `docs/DATABASE.md` section 7.2.1 (first copy of a repeated hour is bookable, also for the end of a slot); they are hand-traced but not yet tested against a live database. One known limitation: slot lengths under 60 minutes that do not divide 60 (for example 45) can give two overlapping grid slots on a clocks-forward day, so one is refused as "taken". `src/lib/time` must use the same rules. | Phase 10, with dedicated tests (T10). |
+| **Deadlocks** (database decision Q10, `docs/DATABASE.md` section 7.10) | Rare overlaps of writes (for example two deletes, or a booking during a plan change) can make PostgreSQL cancel one transaction with error `40P01`. Nothing is corrupted. | Every write Server Action, including booking submission, retries once on `40P01`; the Stripe webhook relies on Stripe's retry. Checked in Phase 17 testing. |
 | **Image upload size** (A15) | Next.js limits how much data a form may send to a Server Action. The limit must be raised enough for a 2 MB image and checked against Vercel's own limit. | Phase 9. |
 | **Login cookie hidden from page scripts** (AUTH-05) | The Supabase cookie helper must be configured for this; the default may differ. | Phase 7. |
-| **Supabase key names** (section 7) | The dashboard may use different names from the ones listed. | Phase 7. |
+| **Supabase key names** (section 7) | The dashboard may use different names from the ones listed. The database tests (Phase 4) already work with the publishable and secret keys under the names in section 7, so the names are right for `supabase-js`; the cookie-based login still has to be checked. | Phase 7. |
 | **Next.js 16 differences** | This version differs from older tutorials (for example "proxy" instead of "middleware"). | Before every phase, the matching guide in `node_modules/next/dist/docs/` is read first. |
+
+---
+
+## 11. Change history
+
+- **2026-11-12** — First version (Phase 3): decisions A1–A20 and L1–L7, rate limit per visitor per workspace.
+- **2026-11-13** — Aligned after S1 and S2: the secret key is used in six named places (A4), the downgrade selection and its safe state (A18).
+- **2026-11-14 (Phase 5)** — Aligned with the built database: the `tests/` row now describes `tests/db/` and `playwright.config.ts`; public pages read tables directly with `service_role` and a column-limited `bookings` read instead of "a small set of read functions" (decisions Q3 and Q11); A6 and the input-validation row point to `docs/DATABASE.md` instead of "decided in Phase 4"; L6 records that CLI v3 needs `--remote` and that a pushed migration is never edited; the risks table adds the clock-change rules and their known limitation, the deadlock-retry rule, and notes that the database tests avoid the email limit and already work with the key names.

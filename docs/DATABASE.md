@@ -1,8 +1,8 @@
 # SlotMate — Database Design
 
-Last updated: 2026-11-12 · Phase 4 (Database design) · Sources: `docs/MASTER_PROMPT.md`, `docs/PROJECT_REQUIREMENTS.md`, `docs/ARCHITECTURE.md`
+Last updated: 2026-11-14 · Phase 4 (Database design, migrations) and Phase 5 (documentation alignment) · Sources: `docs/MASTER_PROMPT.md`, `docs/PROJECT_REQUIREMENTS.md`, `docs/ARCHITECTURE.md`
 
-**Status:** design only. No SQL files exist yet and nothing has been created in Supabase. Every SQL snippet in this document is a sketch to explain an idea and has **not** been run against a database (see section 13).
+**Status:** migrations 1–7 are applied to the development Supabase project (2026-11-14), and 9 of the 21 designed tests (T1–T8 and T19) pass against it (`docs/TESTING.md`). The SQL in `supabase/migrations/` is what is deployed. The SQL snippets in this document are sketches that explain an idea; where a snippet and a migration differ, the migration is right and this document needs fixing. Section 13 lists what is still unverified, and the change history is at the end.
 
 ---
 
@@ -241,7 +241,7 @@ Conventions used by every table:
 | `owner_id` | uuid | required | — | Copy of the workspace's owner (DB3). |
 | `name` | text | required | — | |
 | `description` | text | optional | `NULL` | |
-| `image_path` | text | optional | `NULL` | Path of the file in Storage (D9). |
+| `image_path` | text | optional | `NULL` | Path of the file in Storage (D9), in the form `<owner_id>/<resource_id>/<file name>` (section 5.4). Owners cannot write it; only `set_resource_image()` does. |
 | `is_available` | boolean | required | `true` | The owner's on/off switch (RES-06). |
 | `is_locked` | boolean | required | `false` | Downgrade lock (section 7.8). |
 | `slot_minutes` | int | required | **none** | Fixed slot length (RES-07: the owner must choose one). |
@@ -251,7 +251,7 @@ Conventions used by every table:
 - **PK:** `id`.
 - **FK:** `(workspace_id, owner_id)` → `workspaces(id, owner_id)` **ON DELETE CASCADE**. Deleting a workspace deletes its resources (D13). Because the pair must match, a resource can never carry a different owner than its workspace.
 - **Unique:** `(id, owner_id)` for the bookings table's matching foreign key.
-- **Check:** `char_length(btrim(name)) BETWEEN 1 AND 100`; `description` ≤ 1000; `slot_minutes BETWEEN 5 AND 1440` (zero, negative or silly values refused, RES-07); `capacity BETWEEN 1 AND 1000` (RES-08).
+- **Check:** `char_length(btrim(name)) BETWEEN 1 AND 100`; `description` ≤ 1000; `slot_minutes BETWEEN 5 AND 1440` (zero, negative or silly values refused, RES-07); `capacity BETWEEN 1 AND 1000` (RES-08); `image_path` at most 1024 characters (added in migration 3; the other text columns have limits, so this one does too).
 - **Trigger checks:** BEFORE INSERT enforces the plan's resource limit (section 7.7).
 - **Indexes:** `workspace_id` (list a workspace's resources, public page); `owner_id` (owner-wide counts and RLS).
 
@@ -321,7 +321,7 @@ Conventions used by every table:
 
 - **PK:** `(owner_id, month)` — one counter per owner per month; also the lookup index.
 - **FK:** `owner_id` → `profiles(id)` **ON DELETE CASCADE**. Deliberately *no* link to bookings, resources or workspaces.
-- **Check:** `booking_count >= 0`; `month = date_trunc('month', month)::date` (it must be a first-of-month date).
+- **Check:** `booking_count >= 0`; `extract(day from month) = 1` (it must be a first-of-month date; written this way because `date_trunc` on a date goes through `timestamptz` and would depend on the session time zone).
 - **Indexes:** the PK index.
 - No row for a month means a count of 0, so nothing has to run on the 1st (section 7.3).
 
@@ -416,6 +416,39 @@ All are created in the `public` schema, and all follow the rules in section 6.
 | `submit_booking(...)` | function | The whole booking submission (section 7.2). |
 | `check_rate_limit(workspace, ip_hash)` | function | Records an attempt, counts recent ones, answers allowed / not allowed (section 7.4). |
 | `claim_stripe_event(id, type)` / `mark_stripe_event_processed(id)` | functions | Webhook memory (section 7.6). |
+| `set_resource_image(owner, resource, path)` | function | Records a resource's image path after the server-side upload; refuses locked or foreign resources and paths outside the owner's folder (section 5.4, owner decisions Q2 and R4). |
+
+### 4.5 Functions as built
+
+The 18 functions that exist in `public` after migrations 1–7. "Runs as" is the security setting: `DEFINER` runs with the creating role's powers, `INVOKER` with the caller's. Every function has `SET search_path = ''` and no `EXECUTE` for `PUBLIC`, `anon` or `authenticated`. The "Who calls it" column shows who may call the function directly; trigger functions are only ever fired by their trigger.
+
+| Function | Kind | Runs as | Who calls it | Migration |
+|---|---|---|---|---|
+| `set_updated_at()` | trigger | INVOKER | trigger only | 1 |
+| `current_plan(p_owner_id)` | helper | INVOKER | `service_role` | 2 |
+| `handle_new_user()` | trigger on `auth.users` | DEFINER | trigger only | 2 |
+| `handle_new_workspace()` | trigger | DEFINER | trigger only | 3 |
+| `validate_time_zone()` | trigger | INVOKER | trigger only | 3 |
+| `enforce_embed_plan_rules()` | trigger | DEFINER | trigger only | 3 |
+| `enforce_booking_transition()` | trigger | INVOKER | trigger only | 4 |
+| `enforce_workspace_limit()`, `enforce_resource_limit()` | trigger | DEFINER | trigger only | 6 |
+| `submit_booking(...)` | function | DEFINER | `service_role` | 6 |
+| `check_rate_limit(p_workspace_id, p_ip_hash)` | function, returns boolean | DEFINER | `service_role` | 6 |
+| `claim_stripe_event(p_event_id, p_event_type)` | function, returns `claimed` or `duplicate` | DEFINER | `service_role` | 6 |
+| `mark_stripe_event_processed(p_event_id)` | function | DEFINER | `service_role` | 6 |
+| `reconcile_locks(p_owner_id)` | function | DEFINER | `service_role` | 6 |
+| `reconcile_locks_on_subscription_change()`, `reconcile_locks_after_delete()` | triggers (the second is statement-level) | DEFINER | trigger only | 6 |
+| `apply_downgrade_selection(p_owner_id, p_workspace_id, p_resource_ids)` | function | DEFINER | `service_role` | 6 |
+| `set_resource_image(p_owner_id, p_resource_id, p_path)` | function | DEFINER | `service_role` | 6 |
+
+`current_plan` is `INVOKER` because it is not on the approved `DEFINER` list; it reads `subscriptions`, so a direct caller needs `SELECT` there (`service_role` has it). The `DEFINER` functions that call it run it as the table owner.
+
+**Errors the triggers raise** (short, fixed names, like the booking errors of section 7.2; the server maps each to a message):
+
+- Plan-limit triggers: `not_owner`, `owner_not_found`, `workspace_limit_reached`, `resource_limit_reached` (section 7.7).
+- `enforce_booking_transition`: `invalid_status_change` (section 7.7).
+- `validate_time_zone`: `invalid_time_zone` (section 7.9).
+- `enforce_embed_plan_rules`: `pro_only_embed_option` (section 7.7).
 
 ---
 
@@ -438,8 +471,8 @@ All are created in the `public` schema, and all follow the rules in section 6.
 | `profiles` | Read own row. | Nothing. | Nothing. |
 | `subscriptions` | **Read** own row. No insert, update or delete. | Nothing. (The Stripe webhook, not a visitor, writes it.) | Nothing. |
 | `plan_limits` | Read (two rows of plain numbers, nothing private). | Nothing. | Nothing. |
-| `workspaces` | Read, create (within plan limit), edit name/description/slug/time zone **unless locked**, delete (even if locked). Cannot write `is_locked` or `owner_id`. | Read name, description, slug, time zone of an existing, unlocked workspace. | Nothing. |
-| `resources` | Read, create (within limit, not into a locked workspace), edit **unless locked**, delete. Cannot write `is_locked`, `owner_id`, `workspace_id`. | Read name, description, image, capacity, slot length of resources that are available and unlocked. | Nothing. |
+| `workspaces` | Read, create (within plan limit), edit name/description/slug/time zone **unless locked**, delete (even if locked). Cannot write `is_locked`. `owner_id` can be sent on insert only (the policy forces it to the logged-in owner) and never on update (owner decision Q6). | Read name, description, slug, time zone of an existing, unlocked workspace. | Nothing. |
+| `resources` | Read, create (within limit, not into a locked workspace), edit **unless locked**, delete. Cannot write `is_locked` or `image_path`. `owner_id` and `workspace_id` can be sent on insert only (the policy and the composite foreign key force them to match the owner's own workspace) and never on update (Q6). | Read name, description, image, capacity, slot length of resources that are available and unlocked. | Nothing. |
 | `resource_availability` | Read; create, edit, delete for own resources **unless locked**. | Read the schedule of an available, unlocked resource (to compute slots). | Nothing. |
 | `bookings` | Read own. Change **only** `status`, and only along the allowed path, **unless locked**. Delete own (**unless locked**). **Cannot insert.** | Create **only** through `submit_booking`. Read taken time ranges with no personal details (ISO-03). Read one booking's resource, time, name and status by status-token hash. Cannot edit or delete. | Nothing. |
 | `monthly_usage` | Read own counts. Cannot write. | Counter raised only inside `submit_booking`; "limit reached" can be read. | Nothing. |
@@ -447,9 +480,11 @@ All are created in the `public` schema, and all follow the rules in section 6.
 | `stripe_events` | **No access.** | Not involved. The webhook handler (secret key) uses the two functions. | **No access.** |
 | `embed_configurations` | Read own; edit theme/layout/background of own workspace **unless locked** (Pro-only values only if Pro). No insert or delete (the row is automatic). | Read the options of an existing, unlocked workspace to build the widget. | Nothing. |
 
-"Locked" means the downgrade state of section 7.8.
+"Locked" means the downgrade state of section 7.8. For a resource, an availability row, a booking or the embed options, "locked" means the row itself **or its workspace** is locked.
 
-### 5.3 Policy sketch (explanatory, not run)
+How "Visitor via server" works as built (owner decisions Q3 and Q11): there are no public read functions in version 1. Our server code uses `service_role` and reads the tables directly, and `service_role` holds only the table privileges it needs (section 6.3). On `bookings` its `SELECT` is limited to the columns `id`, `resource_id`, `owner_id`, `visitor_name`, `starts_at`, `ends_at`, `status` and `status_token_hash`; it cannot read `visitor_email`, `visitor_phone` or `note` at all, so a query that asks for every column (`select *`) fails with "permission denied". Server code must name its columns. The server's own code decides which of these fields a visitor page may show (ISO-02, ISO-03).
+
+### 5.3 Policy sketch (explanatory; the real policies are in migration 7)
 
 ```sql
 -- workspaces: an owner sees only their own rows
@@ -470,6 +505,14 @@ The `USING` part says which existing rows the policy applies to. The `WITH CHECK
 
 Images live in a publicly readable Storage bucket `resource-images`. The bucket allows JPG, PNG and WebP files up to 2 MB (D9, RES-05). Uploads go through server-side application code only: the server validates the actual file type and size, verifies the owner and resource, then writes using the service-role key. The key is server-only and is never exposed to browser code. No browser role has a Storage write policy. Image uploads are the fifth of the six approved service-role usage areas; the sixth is saving the downgrade selection (A4; section 5.1).
 
+**As built (migrations 3, 6 and 7; owner decisions Q2 and R4):**
+
+- **The bucket** is created by migration 7 as a public bucket with a 2 MiB (2,097,152 bytes) limit and the types `image/jpeg`, `image/png` and `image/webp`. The insert is an upsert, so it also works if the bucket already exists. No policy at all exists on `storage.objects`: public files are served through the bucket's public address, and nobody can list the bucket or write to it with a browser key (inferred from the absence of policies; T21 will test it).
+- **The path** stored in `resources.image_path` has the form `<owner_id>/<resource_id>/<file name>`, where both IDs are the lowercase, hyphenated UUID text. The server generates the file name itself (for example a random name plus the extension of the validated file type) and never reuses the visitor's or owner's original file name. The column allows at most 1024 characters.
+- **Recording the path** goes only through `set_resource_image(p_owner_id, p_resource_id, p_path)`, a `SECURITY DEFINER` function callable by `service_role` only. `service_role` has **no** `UPDATE` privilege on `resources`. The function refuses unless the resource belongs to `p_owner_id` **and** neither the resource nor its workspace is locked (a locked resource is read-only even for our server, which skips RLS). It also refuses a path that does not start with `<p_owner_id>/<p_resource_id>/`, a path with nothing after that prefix, and a path containing `..`. A `NULL` path removes the image. Errors: `resource_not_found`, `resource_locked`, `invalid_path`.
+- **The path rule is a safety net, not a file-name validator.** It does not restrict the characters in the file name (percent-encoded dots, spaces, extensions). The server flow must generate safe names (open item in `docs/DEVELOPMENT_LOG.md`).
+- **Order of work is not decided yet (Phase 9).** Calling `set_resource_image` first makes a locked or foreign resource fail before any file is stored, but a failed Storage write would then leave a path with no file; writing the file first has the opposite problem. Phase 9 chooses, and must handle the failure case. Deleting a workspace or resource still needs the Server Action to delete the files first (DB15).
+
 ---
 
 ## 6. Function and table access
@@ -478,16 +521,18 @@ This section is a hard rule for the migrations. It exists because Supabase, by d
 
 ### 6.1 Rules for every function
 
-1. `submit_booking` and **every other server-only function**, including the protected downgrade-selection function, must, in the migration that creates it, **explicitly revoke `EXECUTE` from `PUBLIC`, `anon` and `authenticated`**, and then grant `EXECUTE` to `service_role` only.
+1. `submit_booking` and **every other server-only function**, including the protected downgrade-selection function and `set_resource_image`, must, in the migration that creates it, **explicitly revoke `EXECUTE` from `PUBLIC`, `anon` and `authenticated`**, and then grant `EXECUTE` to `service_role` only.
    ```sql
    revoke execute on function public.submit_booking(/* arguments */) from public, anon, authenticated;
    grant  execute on function public.submit_booking(/* arguments */) to service_role;
    ```
 2. Every function sets a **fixed `search_path`**: `SET search_path = ''`, and refers to every object with its schema name (`public.bookings`, `pg_catalog.now()`). No function relies on the caller's `search_path`.
-3. `SECURITY DEFINER` is used only where the function must do what the caller may not (`submit_booking`, `check_rate_limit`, the limit triggers, `handle_new_user`, `reconcile_locks`). Each such function validates its own inputs and returns or changes only what it must.
+3. `SECURITY DEFINER` is used only where the function must do what the caller may not. The approved list (owner decisions Q1 and Q2) is: `submit_booking`, `check_rate_limit`, `claim_stripe_event`, `mark_stripe_event_processed`, `apply_downgrade_selection`, `set_resource_image`, `reconcile_locks`, `enforce_workspace_limit`, `enforce_resource_limit`, `handle_new_user`, `handle_new_workspace`, `enforce_embed_plan_rules`, `reconcile_locks_on_subscription_change` and `reconcile_locks_after_delete`. Each of them must do something its caller is not allowed to do: write a table the caller has no privilege on, take a row lock the caller may not take, call a function the caller may not execute, or use a table no role can touch. Each such function validates its own inputs and returns or changes only what it must. A function not on this list is `SECURITY INVOKER`; adding to the list is a new decision.
 4. The migration also changes the **default privileges** so a function added later starts with no access for `PUBLIC`, `anon` and `authenticated`. Forgetting step 1 then fails closed (nobody can call it) instead of open.
 5. Trigger functions are not callable through the web API as normal functions, but get the same revoke and `search_path` treatment, for the same fail-closed reason.
-6. A test (section 10) lists every function in `public` and fails if any is executable by `anon` or `authenticated` without being on an explicit allow-list in this document. The allow-list is currently **empty**.
+6. A test (section 10) lists every function in `public` and fails if any is executable by `anon` or `authenticated` without being on an explicit allow-list in this document. The allow-list is currently **empty**. (Test T6 implements this check.)
+7. No RLS policy calls a function in `public`. The policies use only `auth.uid()`, which Supabase already lets `authenticated` run. So `authenticated` needs no `EXECUTE` on any of our functions. If a policy ever needs one, the migration must grant `EXECUTE` to `authenticated` for that function (the global revoke of rule 4 removes the default) **and** add it to the allow-list of rule 6 as a documented decision.
+8. `service_role` also starts closed: it does not get `TRUNCATE`, `TRIGGER` or `REFERENCES` on any table, existing or future (migration 7 revokes them from existing tables and from the default privileges for future ones). Only `MAINTAIN` remains.
 
 ### 6.2 Who may call what
 
@@ -499,6 +544,7 @@ This section is a hard rule for the migrations. It exists because Supabase, by d
 | `reconcile_locks` | no | no | yes (also run by triggers) |
 | `apply_downgrade_selection` | no | no | yes |
 | `current_plan` | no | no | yes |
+| `set_resource_image` | no | no | yes |
 | All trigger functions | no | no | no direct calls needed |
 
 ### 6.3 Tables never reachable by browser roles
@@ -511,6 +557,15 @@ This section is a hard rule for the migrations. It exists because Supabase, by d
 And these are reachable by a logged-in owner only as **read-only** (own rows): `profiles`, `subscriptions`, `monthly_usage`, `plan_limits`. For `anon`, **every** table is closed. `auth.users` is managed by Supabase and is never exposed to our own queries.
 
 Only the `public` schema is exposed through Supabase's web API; nothing else we create is.
+
+### 6.4 What `service_role` holds (migration 7)
+
+Because migration 1 closed the default privileges, nothing is granted by accident; migration 7 grants exactly this (verified read-only on 2026-11-14; summary in `docs/DEVELOPMENT_LOG.md` Phase 4f, raw output kept in the private notes folder):
+
+- `SELECT` on `workspaces`, `resources`, `resource_availability`, `embed_configurations`, `monthly_usage`, `plan_limits` and `subscriptions`.
+- Column-limited `SELECT` on `bookings` (section 5.2) and column-limited `UPDATE` on `subscriptions` (`plan`, `status`, `stripe_customer_id`, `stripe_subscription_id`, `current_period_end`, `cancel_at_period_end`) for the Stripe webhook.
+- **No** privilege on `profiles`, `rate_limit_attempts` or `stripe_events`, and **no** `INSERT`, `UPDATE` or `DELETE` anywhere else. Everything else it does goes through the `EXECUTE`-limited functions of section 4.5.
+- `MAINTAIN` (vacuum and analyze) remains from Supabase's defaults. On PostgreSQL 17 it also allows `LOCK TABLE`, but only through a raw SQL connection, which the project does not use.
 
 ---
 
@@ -561,9 +616,9 @@ Steps, in order:
 
 1. **Load** the resource, its workspace (slug, time zone, locked flag) and the owner's ID, in one query. No row → error `not_bookable`.
 2. **Bookable?** The resource must have `is_available = true`, and neither the resource nor its workspace may be locked (RES-06, BILL-09). Otherwise → `not_bookable`.
-3. **Convert to the workspace's clock.** Compute the local start: `starts_at AT TIME ZONE time_zone`. Convert back and require the same instant; if not, that local time does not exist (the skipped hour when clocks go forward) or is the second copy of a repeated hour → `invalid_slot` (ARCHITECTURE 5.4).
+3. **Convert to the workspace's clock.** Compute the local start: `starts_at AT TIME ZONE time_zone`. When clocks go back and an hour happens twice, only the **first** copy of that hour is bookable; the **second** copy → `invalid_slot` (ARCHITECTURE 5.4). A local time inside the skipped hour of a clocks-forward day can never come from a real instant, so it is never offered. The exact method is in section 7.2.1.
 4. **Valid slot?** Find the `resource_availability` row for that local date's ISO weekday. No row → `invalid_slot`. Then require the local time ≥ `opens_at`, the local time + `slot_minutes` ≤ `closes_at`, and the distance from `opens_at` to be an exact multiple of `slot_minutes` (AVAIL-01 to AVAIL-03, AVAIL-05).
-5. **Compute `ends_at`** as the local start plus `slot_minutes`, converted back to an exact moment. The visitor cannot send their own end time.
+5. **Compute `ends_at`** as the local start plus `slot_minutes`, converted back to an exact moment (if that local end falls in a repeated hour, the **first** copy is used; section 7.2.1). `ends_at` must be after `starts_at`, otherwise → `invalid_slot`. The visitor cannot send their own end time.
 6. **Not in the past, not too far ahead:** `starts_at > now()` and the local date ≤ today (in the workspace's zone) + 90 days → otherwise `past` or `too_far` (D8). "Now" is the database server's clock.
 7. **Attendees:** between 1 and the resource's `capacity` → otherwise `too_many_attendees` (RES-08, PUB-04).
 8. **Monthly limit and count, atomically.** Look up the owner's plan limit (`current_plan` + `plan_limits`) and run one statement:
@@ -576,6 +631,23 @@ Steps, in order:
 Errors are raised as `RAISE EXCEPTION` with a short fixed message (`slot_taken`, `limit_reached`, `not_bookable`, `invalid_slot`, `past`, `too_far`, `too_many_attendees`). The Server Action maps each to its friendly message (AVAIL-05).
 
 The usage row is locked from step 8 until the transaction ends, which is a few milliseconds; submissions of the same owner queue briefly and submissions of different owners never interfere.
+
+**As built (migration 6):**
+
+- The arguments are `p_resource_id`, `p_starts_at`, `p_visitor_name`, `p_visitor_email`, `p_visitor_phone`, `p_note`, `p_attendees` and `p_status_token_hash`. The phone and note are passed as `NULL` when empty. The result is one row with `booking_id`, `booking_starts_at` and `booking_ends_at` (the column names differ from the table's so they cannot clash with it inside the function).
+- Step 1 takes shared row locks (`FOR SHARE`) on the resource and its workspace, so an owner's edit or a lock change waits until the booking commits. Shared locks do not block other bookings.
+- Step 4 does its arithmetic in seconds since midnight, because `time + interval` wraps around midnight and `closes_at` may be `24:00`.
+- Errors that are not one of the seven fixed messages can still come out as raw database errors (a check violation such as a name that is too long, `23514`; a duplicate token hash, `23505`; a deadlock, `40P01`). The Server Action's `zod` validation runs first and the action needs a generic fallback message. Any of them undoes the whole call, including the +1.
+
+#### 7.2.1 Clock changes (owner decisions Q7 and R1)
+
+The rules, in terms of what the function does:
+
+- **Start.** `starts_at` is an exact moment, so its local time always exists. The function compares the UTC offset of the moment with the offset 24 hours earlier. If the offset dropped (clocks went back) and the moment minus that drop has the same wall-clock time, then `starts_at` is the **second** copy of a repeated hour and is refused. The first copy, the moments after the repeated hour, and every time on a clocks-forward day are accepted. A plain "convert to local and back" check would be wrong: PostgreSQL resolves an ambiguous local time to the **later** copy, so that check would refuse the first copy and accept the second.
+- **End.** The local end is the local start plus `slot_minutes`. It is converted back to a moment; if that local time is ambiguous (inside a repeated hour) the **first** copy is used, by the same offset comparison. Without this, a slot ending inside the repeated hour got an end one hour too late and overlapped the next slot (found in re-review 2). A safety net refuses the booking if `ends_at` would not be after `starts_at`.
+- **Slots that cross a clock change are allowed.** The slot keeps its wall-clock end, so its real length can differ from `slot_minutes` by the size of the shift (for example 120 real minutes for a 60-minute slot that starts in the first copy of the repeated hour).
+- **Known limitation (open item).** On a clocks-forward day, slot lengths under 60 minutes that do not divide 60 (45, 25, 40, 50 and so on) can produce two grid slots that overlap in real time, because the local-to-real mapping is not increasing across the skipped hour. The overlap rule refuses whichever is booked second with `slot_taken`, so there is no double booking, but a slot that looks free is refused on two days a year. Lengths of 30, 60 and 90 minutes (and any length that divides 60 or is 60 or more) are not affected. Options for later: restrict `slot_minutes`, or clamp a nonexistent end to the moment of the change.
+- **Not yet tested against a live database** (T10 is planned). The behaviour was checked by hand-tracing the dates of 2026 for London, Berlin, New York and Sydney in re-review 3 (`docs/DEVELOPMENT_LOG.md`). `src/lib/time` (Phase 10) must use the same two rules, and T10 must include both copies of the repeated hour, slots that end in it, and the skipped hour.
 
 ### 7.3 The monthly usage counter (A7, D19)
 
@@ -624,7 +696,9 @@ The usage row is locked from step 8 until the transaction ends, which is a few m
 2. Counts the owner's existing workspaces (or resources), **including locked ones**.
 3. Compares with `plan_limits` for `current_plan(owner)`; at or over the limit → raise a clear error that the server turns into the "upgrade" message.
 
-This holds even for a request that skips our web pages, because it lives in the table, not in server code. The server still checks first to show a friendly message; the trigger is the guarantee. `lib/plans.ts` holds the same numbers for display, and a test must verify it matches `plan_limits` (DB6, section 10).
+This holds even for a request that skips our web pages, because it lives in the table, not in server code. The server still checks first to show a friendly message; the trigger is the guarantee.
+
+**As built (migration 6).** Before the lock, a logged-in owner who sends **another owner's** `owner_id` is refused with `not_owner`: the trigger runs before row level security, and without this check it could be used to probe whether another account exists or is at its limit. (`auth.uid()` is empty for `service_role` and for migrations, so those paths are not affected.) A missing profile gives `owner_not_found`; being at or over the limit gives `workspace_limit_reached` or `resource_limit_reached`. The server maps these names to messages, like the booking errors of section 7.2. `lib/plans.ts` holds the same numbers for display, and a test must verify it matches `plan_limits` (DB6, section 10).
 
 **Allowed status changes.** A `BEFORE UPDATE OF status` trigger on `bookings` allows only `pending → approved`, `pending → rejected`, `approved → cancelled`; everything else raises an error (BOOK-03 to BOOK-05). It applies to **every** role, including our own server. Combined with **column-level privileges** (owners may update only the `status` column), an owner cannot alter a visitor's name, the booking time, or move a booking to another resource, even by calling the database directly.
 
@@ -663,6 +737,10 @@ When Pro ends, nothing is deleted (BILL-09). If the owner is over the Free limit
 - **Lifting the lock.** `reconcile_locks` sets all `is_locked` back to `false` when the owner is within their plan's limits: after an upgrade (via the subscription trigger), or after deleting enough items (via after-delete triggers on `workspaces` and `resources`).
 - Existing pending bookings on a locked resource stay as they are; they are read-only too.
 - The dashboard selection is required. The Server Action checks ownership and plan limits before calling the protected function; the function trusts only the server role and applies the supplied selection atomically. If a selection is invalid or absent, no items are unlocked.
+- **As built (migration 6; owner decisions Q5, Q9).**
+  - `apply_downgrade_selection(p_owner_id, p_workspace_id, p_resource_ids)` takes the owner's profile row lock first, like `reconcile_locks`. It accepts exactly **one** workspace and **zero to three** resources (the limit is read from `plan_limits.max_resources` for the owner's plan, 3 on Free), refuses `NULL` elements or duplicate resource IDs in the list (a `NULL` list as a whole counts as an empty selection), and refuses the whole selection, changing nothing, if the workspace is not the owner's or any resource is not the owner's or is not inside the selected workspace (DB17). Errors: `invalid_selection`, and `selection_not_needed` when the owner is already within the plan's limits (applying a selection would lock items for no reason).
+  - `reconcile_locks` has exactly three outcomes: within the plan's limits → unlock everything; over the limits with a valid selection → leave it untouched; over the limits with no valid selection (including the empty set) → lock everything. It never unlocks a subset and never chooses items. It runs from a trigger when `subscriptions.plan` or `status` changes, and after deletes on `workspaces` and `resources` (one run per statement and owner, even for a cascade).
+  - Owners cannot delete **individual bookings** inside a locked resource or workspace (§5.2 "unless locked"), but they can still delete the locked resource or workspace itself, which removes its bookings by cascade. This is how they get back within the limits.
 
 ### 7.9 Time (A10, D7)
 
@@ -676,6 +754,14 @@ When Pro ends, nothing is deleted (BILL-09). If the owner is over the Free limit
 How the pieces meet: `submit_booking` converts the visitor's chosen instant to the workspace's local clock, compares it with the `time` values, and converts the end back to an instant (section 7.2, steps 3–5). Display and charting by workspace zone happen in the app (ARCHITECTURE 5.3, A12).
 
 **DB10 (restated in full): the workspace time zone is required, with no default in the database.** `workspaces.time_zone` is `NOT NULL` and has **no** `DEFAULT`. The create-workspace form pre-fills the owner's browser time zone as a suggestion, which the owner can change from a list; the server then sends an explicit value. If a request arrives without one, the insert fails rather than silently picking UTC or any other zone. Reasons: WORK-04 requires a workspace to have a time zone "from the start"; every slot calculation depends on it; and a silent default would make every slot a few hours wrong for owners who never noticed it. The trigger in section 4.4 rejects anything that is not a real zone name. Changing the zone later is allowed, keeps existing bookings' exact moments, and shows a warning first (A11).
+
+### 7.10 Locks and deadlock retries (owner decision Q10, widened by R2)
+
+Several functions take row locks so that one owner's changes run one after another: the limit triggers, `reconcile_locks`, `apply_downgrade_selection` and `set_resource_image` lock the owner's `profiles` row (`FOR UPDATE`); `submit_booking` takes shared locks on the resource and workspace rows and raises the usage counter. Because these paths take their locks in different orders, a few rare overlaps can deadlock. PostgreSQL then cancels **one** of the two transactions with error `40P01`. No data is corrupted, no count is wrong and no limit is bypassed, because a cancelled transaction is undone completely (for a booking that includes the +1 usage).
+
+The known cases: two overlapping deletes by the same owner; a delete while a webhook or downgrade reconcile runs; a booking while a downgrade or upgrade changes locks; the first booking of a month while one of those runs; creating a resource while its workspace is being deleted. The time window is small.
+
+**Rule:** every Server Action that writes, **including booking submission**, retries the call once when it receives `40P01`. The Stripe webhook does not retry itself: it returns an error and relies on Stripe's own retry (which is safe, section 7.6). There is no lock re-ordering in the SQL. T11, T12 and T16 should include a case that checks the retry.
 
 ---
 
@@ -699,21 +785,35 @@ The master prompt's intent — "ensure that one organization cannot access anoth
 
 We use only the Supabase CLI against the **Supabase cloud project** (no Docker, no local Supabase). Each file is created with `supabase migration new <name>`, which stamps it with a timestamp so the order is fixed. The files live in `supabase/migrations/` and are committed to Git (L6).
 
-Applying a migration to the cloud project (`supabase db push`) changes a real database, so **each push is shown to the project owner first and run only after approval** (master prompt rule 14). Until then nothing is created.
+**Supabase CLI v3 needs `--remote`** for every command that talks to the cloud project (without it the CLI targets a local database, and there is none). The commands used:
+
+```powershell
+npx supabase migration new <name>                     # create an empty, time-stamped file
+npx supabase db push --remote --dry-run               # list the migrations that would be applied
+npx supabase db push --remote                         # apply them (needs the owner's approval)
+npx supabase db query --remote --read-only -f <file>  # read-only check, runs in a read-only transaction
+npx supabase gen types --remote --lang typescript --schema public
+```
+
+**A migration that has been pushed is never edited.** A correction is a new migration, and a new migration needs the owner's explicit authorization.
+
+Applying a migration to the cloud project (`supabase db push --remote`) changes a real database, so **each push is shown to the project owner first and run only after approval** (master prompt rule 14).
 
 | Order | File name (after the timestamp) | Contents |
 |---|---|---|
-| 1 | `extensions_enums_helpers` | `btree_gist`; the four enums; `set_updated_at()`; default-privilege hardening (section 6.1, rule 4). |
-| 2 | `profiles_subscriptions_plan_limits` | The three tables, each with RLS enabled; seed Free and Pro limits; `handle_new_user()` and its trigger on `auth.users`; `current_plan()`. |
+| 1 | `extensions_enums_helpers` | `btree_gist` (in schema `extensions`); the four enums; `set_updated_at()`; default-privilege hardening: new functions get no `EXECUTE` for `PUBLIC`, `anon` or `authenticated` (section 6.1 rule 4), and new tables and sequences in `public` give `anon` and `authenticated` nothing (section 5.1 rule 3). Verified read-only after the push. |
+| 2 | `profiles_subscriptions_plan_limits` | The three tables, each with RLS enabled; seed Free and Pro limits; `handle_new_user()` and its trigger `on_auth_user_created` on `auth.users`; `current_plan()` (its `EXECUTE` is granted to `service_role` here, per section 6.1 rule 1). |
 | 3 | `workspaces_resources_availability_embed` | `workspaces`, `resources`, `resource_availability`, `embed_configurations` with all constraints and indexes, each with RLS enabled; time-zone, new-workspace and embed triggers. |
 | 4 | `bookings` | `bookings` with RLS enabled; exclusion constraint; indexes; status-transition trigger. |
 | 5 | `usage_ratelimit_stripe_events` | `monthly_usage`, `rate_limit_attempts`, `stripe_events` with constraints and indexes, each with RLS enabled. |
-| 6 | `functions` | Limit triggers; `submit_booking`; `check_rate_limit`; the two Stripe-event functions; `reconcile_locks` and its triggers — each with its `REVOKE`/`GRANT` and fixed `search_path`. |
-| 7 | `rls_and_grants` | Revoke and re-grant privileges (column-level where listed); all policies; the Storage bucket (size and type limits) and its policies. RLS is already on (migrations 2–5); this file only confirms it. |
+| 6 | `functions` | Limit triggers; `submit_booking`; `check_rate_limit`; the two Stripe-event functions; `reconcile_locks` and its triggers; `apply_downgrade_selection`; `set_resource_image` — each with its `REVOKE`/`GRANT` and fixed `search_path`. |
+| 7 | `rls_and_grants` | Revoke and re-grant privileges (column-level where listed), including everything `service_role` needs (section 6.4); revoke `TRUNCATE`, `TRIGGER` and `REFERENCES` from `service_role` on existing tables and from the default privileges for future tables; all policies; the Storage bucket (size and type limits, created as an upsert) with **no** policies on `storage.objects`. RLS is already on (migrations 2–5); this file only confirms it. |
+
+**Status:** all seven were applied to the development project on 2026-11-14, and the read-only checks after the push passed (summary in `docs/DEVELOPMENT_LOG.md` Phase 4f; raw output kept in the private notes folder). Migrations 1 and 2–7 were pushed in two steps; the fixes found by the independent reviews (section 14) were made in the files before migrations 2–7 were pushed, so no migration was edited after being pushed.
 
 **RLS is enabled in the same migration that creates each table**, not saved for migration 7. A table with RLS on and no policies lets no browser role in, so every table is closed from the moment it exists, even if a later migration is delayed. Policies and grants stay together in migration 7.
 
-After each applied migration, TypeScript types are regenerated from the cloud project with `supabase gen types typescript --linked` into `src/types/` (this needs no Docker).
+After each applied migration, TypeScript types are regenerated from the cloud project with `npx supabase gen types --remote --lang typescript --schema public` into `src/types/database.types.ts` (this needs no Docker).
 
 Rules for migrations: never edit a migration that was already pushed (add a new one); each file is small and does one job; every file is reviewed before the push.
 
@@ -721,7 +821,11 @@ Rules for migrations: never edit a migration that was already pushed (add a new 
 
 ## 10. Verification plan
 
-No local Supabase and no Docker means no local database test tools (such as pgTAP). Database tests are written as TypeScript tests run by Playwright's test runner (its `request` API can call Supabase's web API) against the **development cloud project**, using throw-away test accounts created through the Auth admin API and deleted afterwards. Nothing in this section has been run yet.
+No local Supabase and no Docker means no local database test tools (such as pgTAP). Database tests are written as TypeScript tests run by Playwright's test runner (no browser is started) against the **development cloud project**, using throw-away test accounts created through the Auth admin API and deleted afterwards.
+
+**Real paths only (owner decision Q4).** Every test uses a path that real code will use: `service_role` through supabase-js calling the real functions, owners as really logged-in users (publishable key and `signInWithPassword`), and `anon` with the publishable key and no login. There is no direct Postgres connection (apart from the two read-only catalog audits, described below) and no extra grant "for the test". Consequences: data is built the way the product builds it (owners create workspaces and resources through RLS; bookings only through `submit_booking`), and a rule that only a direct connection could exercise is tested through the real function that depends on it. The catalog audits T6 and T7 read the catalog with `npx supabase db query --remote --read-only`. How to run the tests and the test-data rules are in `docs/TESTING.md`.
+
+**Status (2026-11-14):** 9 of the 21 designed tests (T1–T8 and T19) are implemented and pass; they run as 19 Playwright test cases. T9–T18 and T20–T21 are planned; `docs/TESTING.md` says in which phase each will be written.
 
 | # | Test | Expected result | Covers |
 |---|---|---|---|
@@ -732,12 +836,12 @@ No local Supabase and no Docker means no local database test tools (such as pgTA
 | T5 | **Owner cannot write the subscription.** As owner A, try to set own `plan` to `pro`, change `status`, insert a second row, delete the row. | All fail; the plan stays `free`. | BILL-06, A6 |
 | T6 | **Function permissions audit.** Query the catalog for every function in `public` and its `EXECUTE` privileges; check each has a fixed `search_path`. | None executable by `PUBLIC`, `anon` or `authenticated`; all have `search_path` set. | section 6.1 |
 | T7 | **RLS audit.** Query the catalog for tables in `public` without RLS. | None. | ISO-01 |
-| T8 | **Parallel booking.** With `service_role`, fire two `submit_booking` calls for the same resource and slot at the same instant; repeat 20 times. | Exactly one booking each time; the loser gets `slot_taken`; the owner's monthly count rose by exactly 1 per round. | PERF-03, AVAIL-04 |
-| T9 | **Overlap rule without the function.** Insert two overlapping pending bookings directly as `service_role`. Insert back-to-back bookings. Reject the first, then book the same slot again. | Overlap refused; back-to-back allowed; slot reusable after reject. | section 7.1 |
+| T8 | **Parallel booking.** With `service_role`, fire several `submit_booking` calls (the implemented test uses three; Phase 17 raises this to about ten) for the same resource and slot at the same instant, each round on a different slot; repeat 20 times. | Exactly one booking each time; every loser gets `slot_taken`; the owner's monthly count rose by exactly 1 per round. | PERF-03, AVAIL-04 |
+| T9 | **Overlap rule through real paths.** With `service_role`, book a slot with `submit_booking`; book the same slot again; then have the owner change the resource's slot length (the owner may update `slot_minutes`) so a new grid slot overlaps the first booking without sharing its start, and book that slot. Book back-to-back slots (10:00 and 11:00). Have the owner reject the first booking (status update through the owner's login) and book the same slot again. | The same slot and the overlapping slot are refused with `slot_taken`; back-to-back is allowed; the slot is reusable after a reject. | section 7.1 |
 | T10 | **Invalid slots refused by the function.** Closed weekday, outside hours, off the slot boundary, in the past, 91 days ahead, attendees above capacity, unavailable resource, the skipped hour on a clock-change day. | Each returns its specific error and creates nothing. | AVAIL-05, section 5.4 of the architecture |
-| T11 | **Monthly limit.** Set a Free owner to 99 bookings, submit 2 at once, then delete one booking and submit again. | One of the two succeeds; the 101st is refused; deleting does not give allowance back; a refused request leaves the count unchanged. | BILL-07, D19 |
+| T11 | **Monthly limit through real paths.** For a Free owner, make 99 real `submit_booking` calls (across several slots and days, with `service_role`), then submit 2 at once, then have the owner delete one booking (through the owner's own login) and submit again. Also submit a request that fails (for example a taken slot) and read the count before and after. Check the retry rule of section 7.10 on a forced `40P01` if one can be provoked. | One of the two succeeds; the 101st is refused with `limit_reached`; deleting does not give allowance back; a refused request leaves the count unchanged. | BILL-07, D19 |
 | T12 | **Plan limits race.** Fire parallel workspace and resource creates for a Free owner at the limit. | Never more than 1 workspace and 3 resources. Direct database inserts as owner are refused too. | BILL-01, A6 |
-| T13 | **Status changes.** Try every pair of statuses as the owner, and as `service_role`. | Only the three allowed changes succeed. Owner cannot change any other booking column. | BOOK-03 to BOOK-05 |
+| T13 | **Status changes through real paths.** As the owner (own login), try every pair of statuses on bookings created with `submit_booking`. As the owner, also try to change any other booking column. As `service_role`, try to update a booking's status. | Only the three allowed changes succeed for the owner; every other pair is refused by the transition trigger; the owner cannot change any other booking column (no privilege); `service_role` is refused for lack of privilege (it has no `UPDATE` on `bookings`, so the trigger's "applies to every role" is exercised only through the owner). | BOOK-03 to BOOK-05 |
 | T14 | **Rate limit.** 6 calls for workspace X with one hash, then 1 for workspace Y with the same hash, then wait out the window. | 6th refused; Y allowed; allowed again after 10 minutes. Refused attempts never changed `monthly_usage`. | SEC-06, D24 |
 | T15 | **Webhook memory.** Claim the same event twice; claim, crash before marking, claim again. | `claimed`, then `duplicate`; the crashed one is `claimed` again. | BILL-05 |
 | T16 | **Downgrade lock and selection.** Give an owner 3 workspaces and 10 resources as Pro, move to Free. Verify the safe all-locked state before selection, and that a subscription change re-running `reconcile_locks` in that state neither treats the empty unlocked set as a valid selection nor unlocks anything; submit an owned selection through the Server Action; try an unowned or over-limit selection; try a selection where one of the three resources belongs to a different workspace than the selected one; then try to edit, book and delete, and upgrade. | No items are silently selected; an all-locked owner stays all-locked until they choose. A valid selection keeps exactly the selected workspace and three resources active; invalid selections fail and leave the safe state, including the mixed-workspace selection (DB17). Other items remain read-only, hidden from the public and unbookable; deleting remains available; upgrade unlocks all. | D20, BILL-09, section 7.8 |
@@ -747,7 +851,16 @@ No local Supabase and no Docker means no local database test tools (such as pgTA
 | T20 | **Time zone.** Create a workspace with an invalid zone name; with none at all. | Both refused. | DB10, WORK-04 |
 | T21 | **Image upload path.** Attempt valid and invalid image uploads through the server flow; attempt Storage writes with browser roles and check bucket reads. | JPG, PNG and WebP up to 2 MB succeed only through the server flow after ownership validation; unsupported, oversized and unauthorized uploads fail; images are publicly readable; browser writes and service-role key exposure are absent. | S1, RES-05, section 5.4 |
 
-Results are recorded in `docs/TESTING.md` and `docs/DEVELOPMENT_LOG.md` when the tests exist (Phase 17 at the latest; T1–T8 as soon as the migrations are applied).
+Results are recorded in `docs/TESTING.md` and `docs/DEVELOPMENT_LOG.md` (Phase 17 at the latest; T1–T8 and T19 were run on 2026-11-14, right after the migrations were applied).
+
+**Notes on the tests as implemented:**
+
+- **T2** accepts either `42501` (permission denied for function) or `PGRST202` (the function is not visible to that role): both mean "this role cannot call it". A positive control shows the same arguments work for `service_role`.
+- **T3** follows the "(or no rows)" wording: a closed table must either refuse with `42501` or return no rows.
+- **T4**: `service_role` has no privilege on `rate_limit_attempts` and `stripe_events` either (section 6.4), so their row counts cannot be read through a real path; for those two tables, a refused statement is the proof that nothing ran.
+- **T6** also asserts that `service_role` can execute exactly the eight server-only functions of section 4.5; a new function therefore needs a test update, which is the point of the allow-list.
+- **T19** also checks that deleting the Auth user removes the subscription row. That row goes through the cascade from the profile; `service_role` cannot read `profiles`, so the profile's own removal is implied by the cascade, not asserted.
+- **T7** adds a check that no policy is granted to `anon` or `PUBLIC`.
 
 ---
 
@@ -806,14 +919,48 @@ All DB1–DB16 were approved by the project owner on 2026-11-12, with the change
 | S1 | All image uploads use server-side application code and the service-role key after owner/resource validation. The public `resource-images` bucket accepts JPG, PNG and WebP up to 2 MB. Browser roles have no write policy; the key is never exposed to browser code. | 5.4, 6, 10 (T21) | Fifth of the six approved service-role usage areas listed in 5.1; the sixth is the downgrade selection (S2). |
 | S2 | On Pro downgrade, the owner selects one workspace and three resources in the dashboard. A Next.js Server Action validates ownership and plan limits, then calls a protected database function using the service-role key. Function execution is revoked from `PUBLIC`, `anon` and `authenticated` and granted only to `service_role`. No automatic oldest-first selection. Until a valid selection exists, affected items remain locked/read-only and unavailable publicly. | 6, 7.8, 10 (T16) | No data is deleted; upgrading lifts locks. Sixth approved service-role usage area (5.1). |
 
+### Decisions made while writing and reviewing migrations 2–7 (2026-11-14)
+
+Q1–Q12 answer the open questions from the first independent review of the migrations. R1–R4 were decided after the second review and checked by the third. All were approved by the project owner on 2026-11-14.
+
+| # | Decision | Where |
+|---|---|---|
+| Q1 | The extra `SECURITY DEFINER` functions are approved (`handle_new_workspace`, `enforce_embed_plan_rules`, `claim_stripe_event`, `mark_stripe_event_processed`, `apply_downgrade_selection`, `reconcile_locks_on_subscription_change`, `reconcile_locks_after_delete`). | 6.1 rule 3, 4.5 |
+| Q2 | No raw `UPDATE (image_path)` grant for `service_role`. A `SECURITY DEFINER` function `set_resource_image(p_owner_id, p_resource_id, p_path)` refuses unless the resource is the owner's and neither it nor its workspace is locked; `service_role` only; in migration 6. | 5.4 |
+| Q3 | `service_role` reads `bookings` through a column-limited `SELECT` (no `visitor_email`, `visitor_phone`, `note`). | 5.2, 6.4 |
+| Q4 | All tests use real paths only: no direct Postgres connection and no extra grants. T9, T11 and T13 are rewritten accordingly. | 10 |
+| Q5 | Downgrade selection: exactly one workspace and zero to three resources. | 7.8 |
+| Q6 | Owners may send `owner_id` (and `workspace_id` on resources) on insert only; the policy forces it to their own. | 5.2 |
+| Q7 | On a clocks-back day the first copy of a repeated hour is bookable; slots that cross a clock change are allowed and may differ in real length. | 7.2.1 |
+| Q8 | `service_role` has no `TRUNCATE`, `TRIGGER` or `REFERENCES` on `public` tables (existing tables in migration 7; future tables per R3). | 6.1 rule 8, 6.4 |
+| Q9 | Owners cannot delete individual bookings on a locked resource or workspace, but can delete the locked resource or workspace. | 7.8 |
+| Q10 | Deadlocks (`40P01`) between overlapping deletes and webhook or selection reconciles are accepted; the app retries once (widened by R2). | 7.10 |
+| Q11 | For version 1, public pages read tables directly through `service_role`; there are no public read functions. | 5.2 |
+| Q12 | The dashboard repeats the DB7 Pro rule (`plan = 'pro'` and status `active` or `trialing`) from the subscriptions row, because owners cannot execute `current_plan`; a test must cover that the two agree. | 6.2 |
+| R1 | `ends_at` also uses the first copy of a repeated hour, and `ends_at` must stay after `starts_at`. | 7.2.1 |
+| R2 | Q10 is widened: all write Server Actions, including booking submission, retry once on `40P01`; the webhook relies on Stripe's retry; no lock re-ordering in SQL. | 7.10 |
+| R3 | Migration 7 also removes `TRUNCATE`, `TRIGGER` and `REFERENCES` from the default privileges for future tables created by `postgres` in `public`. Verified after the push. | 6.1 rule 8 |
+| R4 | `set_resource_image` refuses a path that does not start with `<owner_id>/<resource_id>/` or that contains `..`. A `NULL` path removing the image, and refusing a path with no file name, are implementation choices (flagged in the SQL), not separately approved decisions. | 5.4 |
+
+Also recorded: concurrent duplicate Stripe deliveries may both be processed; this is harmless because the webhook re-fetches the subscription's current state from Stripe (A14), so handling it twice ends in the same state.
+
 ---
 
 ## 13. What has not been verified
 
-- **Nothing here has been run.** No SQL file exists and nothing has been applied to a database. All SQL in this document is explanatory. Syntax, names and behaviour will be proved by the migrations and the tests in section 10.
-- **The Mermaid diagram.** It is written in the standard `erDiagram` syntax, but it has not been rendered by a tool yet. Open this file in GitHub's preview, VS Code with a Mermaid extension, or mermaid.live to confirm; fix any syntax error there before Phase 5.
-- **Supabase defaults.** The default privileges Supabase gives new tables and functions, and whether `btree_gist` can be installed with the `uuid` operator class on the project's Postgres version, must be confirmed against the actual cloud project in migration 1.
-- **Triggers on `auth.users`.** A failing trigger there blocks all sign-ups. It must be tested before anything else depends on it (T19).
-- **Locking and parallel behaviour** (sections 7.1, 7.3, 7.7) follows documented Postgres behaviour, but is proved only by T8, T11 and T12.
-- **Clock-change handling** in `submit_booking` (step 3) is designed, not tested (T10).
-- **Supabase's built-in email limits** for creating many test accounts (ARCHITECTURE section 10) may force test accounts to be created through the Auth admin API instead of the sign-up form.
+- **What has and has not been proved (2026-11-14).** Migrations 1–7 have been applied, which proves the SQL is accepted by the database, and read-only catalog checks confirmed the objects, privileges and policies exist as designed. Tests T1–T8 and T19 pass and prove the behaviours named below. Everything else in section 10 (T9–T18, T20, T21) has **not** been run, so the run-time behaviour of the limit triggers, the monthly limit, status transitions, the rate limit, Stripe event memory, the downgrade lock and selection, cascades, the time-zone check and image paths is designed and read-reviewed but not yet tested. All SQL snippets in this document are still explanatory; the migrations are the source of truth.
+- **The Mermaid diagram.** It is written in the standard `erDiagram` syntax, but it has not been rendered by a tool yet. Open this file in GitHub's preview, VS Code with a Mermaid extension, or mermaid.live to confirm; fix any syntax error there before Phase 18 (final documentation). `docs/ARCHITECTURE.md` has four Mermaid diagrams that have not been rendered by a tool either.
+- **Supabase defaults — verified.** The read-only checks after migration 1 confirmed that, for objects created by `postgres` (the role that runs our migrations), new tables in `public` give `anon` and `authenticated` nothing and `service_role` only `MAINTAIN`, `REFERENCES`, `TRIGGER` and `TRUNCATE`, and that no default privilege grants `EXECUTE` on new functions to `PUBLIC`, `anon` or `authenticated`. They also confirmed that `btree_gist` 1.7 is installed in schema `extensions` with the default `gist_uuid_ops` class, which contains `=(uuid,uuid)`. After migration 7, the same default privileges give `service_role` only `MAINTAIN` on new tables. The default privileges that Supabase's own admin role (`supabase_admin`) sets are Supabase's and are not changed by our migrations; they do not apply to objects created by `postgres`. For that reason database objects are created only through migrations (which run as `postgres`), never by hand as another role.
+- **Triggers on `auth.users` — verified.** A failing trigger there would block all sign-ups. T19 passes: creating an account through the Auth admin API creates exactly one `profiles` row and one Free `subscriptions` row. This has not been tried through the real sign-up form (Phase 7).
+- **Locking and parallel behaviour** (sections 7.1, 7.3, 7.7). The double-booking rule and the atomic +1 are verified by T8 (20 rounds of 3 simultaneous requests: one winner each round, the others `slot_taken`, usage +1 per round). The monthly limit at the boundary (T11) and the plan-limit race (T12) are **not yet** tested, and neither are the deadlock cases of section 7.10.
+- **Clock-change handling** in `submit_booking` (steps 3 and 5, section 7.2.1) is designed and was traced by hand for four zones in re-review 3, but is **not tested** against a live database (T10). One known limitation is open (45-minute-type slots on a clocks-forward day).
+- **Supabase's built-in email limits** for creating many test accounts (ARCHITECTURE section 10): the database tests create their accounts through the Auth admin API with the email already confirmed, which sends no email and ran without hitting a limit. The limits still matter for the real sign-up form (Phase 7).
+
+---
+
+## 14. Change history
+
+- **2026-11-12** — First version: tables, RLS design, special designs, migration plan, test plan, decisions DB1–DB16.
+- **2026-11-13** — Aligned after decisions S1, S2 and DB17 (service-role areas, downgrade selection, the valid-selection definition).
+- **2026-11-14 (Phase 4, migrations)** — Migrations 1–7 written, reviewed by independent read-only reviewers (three rounds) and applied to the development project. The reviews found, and the migrations fixed before the push, among others: a repeated-hour check that refused the wrong copy; `service_role` keeping `TRUNCATE`; a limit trigger that ran before RLS and leaked whether another account existed; an unbounded `image_path`; and a bucket insert that would fail if the bucket existed. A later review found that a slot's end time could land in the wrong copy of a repeated hour (fixed by R1).
+- **2026-11-14 (Phase 5)** — This document was aligned with what was built: status and section 13 (verified versus not yet proved); `image_path` and `monthly_usage` details (3.5, 3.8); the function list as built (4.4 and new 4.5); the approved `SECURITY DEFINER` list and the new rules 7 and 8 (6.1), `set_resource_image` (6.2, 5.4) and what `service_role` holds (new 6.4); column-limited booking reads (5.2); the repeated-hour method and `ends_at` (7.2, new 7.2.1); the downgrade details (7.8); locks and the deadlock retry rule (new 7.10); the migration plan, CLI v3 `--remote` and the "never edit a pushed migration" rule (9); the real-paths-only rule and rewritten T9, T11 and T13 (10); decisions Q1–Q12 and R1–R4 (12); and the error names raised by the triggers (4.5, 7.7), after a documentation review.
