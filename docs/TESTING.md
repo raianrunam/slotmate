@@ -4,7 +4,7 @@ Last updated: 2026-11-14 · Phase 5 · Sources: `docs/DATABASE.md` section 10, `
 
 This document says how SlotMate is tested, how to run the tests, what has been proved so far and what has not. The test *design* (what each test must prove) is in `docs/DATABASE.md` section 10; this document tracks the status.
 
-**Status in one line:** 9 of the 21 designed tests (T1–T8 and T19) are implemented, as 19 Playwright test cases, and all pass against the development Supabase project (run on 2026-11-14: 19 passed in 44 seconds; a read-only check afterwards found no test data left behind). The other tests are planned. No user-interface tests exist yet.
+**Status in one line:** 9 of the 21 designed tests (T1–T8 and T19) are implemented, as 19 Playwright test cases, and all pass against the development Supabase project (run on 2026-11-14: 19 passed in 44 seconds; a read-only check afterwards found no test data left behind). The other database tests are planned. User-interface checks also exist (section 6: `npm run test:ui`, 88 checks passing).
 
 ---
 
@@ -12,7 +12,7 @@ This document says how SlotMate is tested, how to run the tests, what has been p
 
 You need:
 
-- Node.js 20.12 or newer (the test configuration uses Node's built-in `process.loadEnvFile`).
+- Node.js 22 or newer (shadcn/ui's `cn` helper needs Node 22; the database test configuration also uses Node's built-in `process.loadEnvFile`).
 - `npm install` done.
 - A **development** Supabase project that has migrations 1–7 applied (`npx supabase db push --remote`) and that the CLI is linked to (`npx supabase link --project-ref <your-project-ref>`). Tests T6 and T7 run read-only SQL through the CLI, which needs you to be logged in (`npx supabase login`).
 - `.env.local` with `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY` (names only here; see `docs/ARCHITECTURE.md` section 7 and `.env.example`).
@@ -105,16 +105,29 @@ T1 to T21 are defined in `docs/DATABASE.md` section 10. Status as of 2026-11-14:
 - Not covered yet: everything in the planned list above, the behaviour of the dashboard and public pages, and the real sign-up form with email confirmation.
 - Time and clock changes are not yet tested against the live database (T10).
 
-## 6. Later: user-interface tests
+## 6. User-interface tests (Phase 6)
 
-When the interface exists (Phase 6 onwards), browser tests will check the layout at three widths, matching RESP-01 and RESP-02:
+Run: `npm run test:ui` (config: `playwright.ui.config.ts`, tests: `tests/ui/`). The first time, install the browser with `npx playwright install chromium`. The config builds the app and starts it on port 3100 (it refuses to reuse something already on that port), so no database, secrets or `.env.local` are needed. The database tests (`npm run test:db`) are separate and unchanged.
+
+Status on 2026-11-14: 88 checks pass. What they check:
+
+- **Every shell page** (landing, the four auth screens, the dashboard and its seven sections, the public booking page, the status page, the widget, the `/design` reference page and the 404 page) at 375, 768 and 1280 px, plus seven pages in the dark theme at 375 and 1280 px. For each: the expected HTTP status; exactly one `h1`, exactly one `main` landmark and no skipped heading level; no console errors or warnings and no page errors; no horizontal scrolling; every control, link and button has an accessible name, and every `aria-labelledby` points at something real.
+- **Interactions:** the skip link is hidden until focused and then visible and readable; a focus ring is drawn on a focused link; the theme menu shows the current choice and switches dark and light; the dashboard shows the sidebar from 1024 px and the menu button below that (768, 1023, 1024, 1280 px); the mobile menu opens, closes on navigation and on Escape and returns focus; the delete confirmation (Cancel and Escape, focus returns); a dialog keeps focus inside; the account menu works by keyboard; pagination shows 20 per page; the phone bookings list shows the time; the Free and Pro limits on the landing page are exactly 1/3/100 and 5/25/1000 with $9.99; the two plan buttons line up; form control borders are dark enough.
+- **Screenshots** of every page and width are saved outside the repository, to `<home>/slotmate-notes/screenshots` (or the folder in the environment variable `SLOTMATE_SCREENSHOT_DIR`).
+
+Known limits of the UI tests: there is no automatic contrast measurement or axe-core scan (that would be a new package, so contrast is checked from the colour tokens in review); the overflow check looks at the whole page, not at content clipped inside a scroll box; the forms and buttons are placeholders, so nothing here tests real behaviour yet; real screen-reader behaviour is not tested.
+
+### Breakpoints for later UI tests
+
+When features are built (Phase 7 onwards), their tests check the layout at three widths, matching RESP-01 and RESP-02:
 
 - **375 px** (phone)
 - **768 px** (tablet)
 - **1280 px** (desktop)
 
-The public booking page and the widget must work fully at 375 px. Those tests will live under `tests/` next to `tests/db/` and need a browser download (`npx playwright install`), which is deliberately not needed for the database tests.
+The public booking page and the widget must work fully at 375 px. Those tests live in `tests/ui/` next to `tests/db/`. They need the Chromium download; the database tests deliberately do not.
 
 ## 7. Change history
 
 - **2026-11-14** — Created (Phase 5). Documents the database tests T1–T8 and T19, which were written and run on this date.
+- **2026-11-14 (Phase 6)** — Added the user-interface tests (`npm run test:ui`, 88 checks) and the Node 22 requirement.

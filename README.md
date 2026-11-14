@@ -2,7 +2,7 @@
 
 SlotMate is a booking and resource-management web app. An **owner** creates workspaces and the things people can book (rooms, desks, equipment, appointments), sets when each one is open, and shares a public page where **visitors** request a time slot without creating an account. The owner then approves or rejects each request from a dashboard. Paid plans raise the limits and unlock more analytics and a customizable website widget.
 
-> **Status: work in progress (Phases 1–5 of 18 done).** The requirements, architecture and database are designed and built, and the database is partly tested (9 of the 21 designed tests so far; see [`docs/TESTING.md`](docs/TESTING.md)). The web interface and the features below are **not built yet**. This README describes the plan and says what exists today.
+> **Status: work in progress (Phases 1–6 of 18 done).** The requirements, architecture and database are designed and built, and the database is partly tested (9 of the 21 designed tests so far; see [`docs/TESTING.md`](docs/TESTING.md)). The page shells exist (a landing page, auth screens, the dashboard, the public booking page, the status page and the widget), but they show placeholder text and read no data; the working features below are **not built yet**. This README describes the plan and says what exists today.
 
 This is also a learning project: the owner is learning software engineering and working with AI coding agents. The honest story of what went well and what went wrong is in [`docs/DEVELOPMENT_LOG.md`](docs/DEVELOPMENT_LOG.md).
 
@@ -44,6 +44,7 @@ The limits are stored in the database and are designed to be enforced there, not
 - **Supabase**: PostgreSQL with row level security, Auth, Storage
 - **Stripe** (test mode) for subscriptions: planned (Phase 15)
 - **Recharts** for charts: planned (Phase 13)
+- **shadcn/ui** (Radix UI and Lucide icons) for the interface components
 - **Playwright** for tests
 - **Supabase CLI** for migrations and generated types
 
@@ -70,7 +71,7 @@ Read more:
 - **Phase 3** Define requirements and architecture: done
 - **Phase 4** Design the database and relationships: done. Seven migrations are applied to the development project; 9 of the 21 designed tests (T1–T8 and T19, run as 19 Playwright test cases) pass.
 - **Phase 5** Create `CLAUDE.md` and project documentation: done
-- **Phase 6** Design the frontend and reusable UI components: planned
+- **Phase 6** Design the frontend and reusable UI components: done. Design tokens (light and dark), shadcn/ui components and placeholder page shells; 88 UI checks pass at 375, 768 and 1280 px.
 - **Phase 7** Authentication: planned
 - **Phase 8** Workspace management: planned
 - **Phase 9** Resource management: planned
@@ -88,7 +89,7 @@ Read more:
 
 These steps set up your own copy against your own Supabase project. Do them **in this order**.
 
-**You need:** Node.js 20.12 or newer (Next.js needs 20.9; the test configuration uses a loader added in 20.12), npm, Git, and a free [Supabase](https://supabase.com) account. A Stripe test-mode account is only needed from Phase 15.
+**You need:** Node.js 22 or newer (shadcn/ui's `cn` helper requires Node 22; Next.js itself needs 20.9), npm, Git, and a free [Supabase](https://supabase.com) account. A Stripe test-mode account is only needed from Phase 15.
 
 1. **Clone and install.**
 
@@ -110,7 +111,7 @@ These steps set up your own copy against your own Supabase project. Do them **in
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`: Project Settings > API Keys. The secret key bypasses all security rules: keep it server-side only.
    - `NEXT_PUBLIC_APP_URL`: `http://localhost:3000` while developing.
    - `RATE_LIMIT_SECRET`: any long random string, for example from `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
-   - The `STRIPE_*` variables are only needed from Phase 15 and can stay empty until then.
+   - `.env.example` currently contains only the three Supabase variables above. `NEXT_PUBLIC_APP_URL` and `RATE_LIMIT_SECRET` are not in the template yet: add them to your `.env.local` when a phase needs them. The `STRIPE_*` variables are only needed from Phase 15.
 
    The full list of names and what each is for: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 7.
 
@@ -136,7 +137,7 @@ These steps set up your own copy against your own Supabase project. Do them **in
    npm run dev
    ```
 
-   Open <http://localhost:3000>. Today this shows only a placeholder page; the interface is built from Phase 6.
+   Open <http://localhost:3000>. You will see the landing page; the other pages (`/login`, `/dashboard`, `/book/sample`, `/design` and so on) are design shells with sample text and no real data yet.
 
 7. **Run the checks.**
 
@@ -156,6 +157,7 @@ Authentication settings in the Supabase dashboard (site URL, redirect URLs, emai
 - `npm run build` and `npm run start`: build and run the production build.
 - `npm run lint`: run ESLint.
 - `npm run test:db`: run the database tests (`playwright test tests/db`).
+- `npm run test:ui`: run the user-interface checks in Chromium at 375, 768 and 1280 px. The first time, run `npx playwright install chromium`. It builds and starts the app on port 3100 and needs no database.
 - `npx tsc --noEmit`: type-check the project.
 - `npx supabase gen types --remote --lang typescript --schema public > src/types/database.types.ts`: regenerate the database types after a migration.
 
@@ -170,13 +172,18 @@ slotmate/
 ├── docs/                    Requirements, architecture, database, testing, development log
 ├── public/                  Static files (from the Next.js starter)
 ├── src/
-│   ├── app/                 Next.js pages (a placeholder home page so far)
+│   ├── app/                 Next.js pages: landing, auth, dashboard, booking, widget and /design shells
+│   ├── components/          ui/ (shadcn/ui) and the app's own components
+│   ├── features/            One folder per feature area, empty until its phase (a README line each)
+│   ├── lib/                 plans.ts (plan limits for display) and utils.ts
 │   └── types/               TypeScript types generated from the database
 ├── supabase/
 │   ├── config.toml          Supabase CLI settings
 │   └── migrations/          The 7 database migrations (SQL, in order)
 ├── tests/db/                Database tests (Playwright test runner, no browser)
-├── playwright.config.ts     Test settings
+├── tests/ui/                User-interface checks (Chromium, three widths)
+├── playwright.config.ts     Database test settings
+├── playwright.ui.config.ts  User-interface test settings
 ├── next.config.ts, eslint.config.mjs, tsconfig.json, package.json   Project configuration
 └── .env.example             Environment variable names (no values)
 ```
