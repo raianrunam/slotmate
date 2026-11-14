@@ -109,7 +109,7 @@ The most important line in the picture is the one that is **missing**: there is 
 
 ## 2. Folder structure under `src/`
 
-**This is the planned layout.** As of 2026-11-14 only `src/app/` (a placeholder home page) and `src/types/` (the generated database types) exist; the rest is built phase by phase.
+**This is the planned layout.** As of 2026-11-14 (Phase 6) these exist: `src/app/` (page shells with placeholder content and no data access, plus a `/design` reference page), `src/components/` (`ui/` from shadcn/ui and the app's own components), `src/features/<area>/` (empty, one README line each), `src/lib/` (`utils.ts` and `plans.ts` only) and `src/types/` (generated database types). `src/proxy.ts`, the feature code, and the other `lib/` files are built phase by phase.
 
 ```
 src/
@@ -120,15 +120,16 @@ src/
 │   │                      feature for data and shows that feature's components.
 │   ├── layout.tsx         The outer frame of every page.
 │   ├── page.tsx           Home page.
-│   ├── (auth)/            login, register, forgot-password, reset-password.
+│   ├── (auth)/            login, signup, forgot-password, reset-password.
 │   │                      The brackets mean the folder name is not part of the address.
 │   ├── auth/confirm/      Route Handler. Where email links land (confirm sign-up,
 │   │                      reset password).
 │   ├── dashboard/         The protected owner area:
-│   │                      overview, workspaces, resources, bookings, analytics,
-│   │                      embed, billing.
+│   │                      overview, workspaces, resources, availability, bookings,
+│   │                      analytics, widget (embed settings), billing.
 │   ├── book/[slug]/       Public booking page for one workspace (PUB-01).
-│   ├── booking/[token]/   Confirmation page and private status page (A8).
+│   ├── booking/[code]/    Confirmation page and private status page (A8). [code] is
+│   │                      the visitor's secret status code.
 │   ├── embed/[slug]/      The widget. Has its own bare layout and is the only
 │   │                      area allowed inside an iframe (EMBED-02).
 │   └── api/stripe/webhook/  Route Handler. Receives Stripe's messages.
@@ -736,3 +737,4 @@ Deliberately **not** added: a rate-limit service, a scheduled-job service, an em
 - **2026-11-12** — First version (Phase 3): decisions A1–A20 and L1–L7, rate limit per visitor per workspace.
 - **2026-11-13** — Aligned after S1 and S2: the secret key is used in six named places (A4), the downgrade selection and its safe state (A18).
 - **2026-11-14 (Phase 5)** — Aligned with the built database: the `tests/` row now describes `tests/db/` and `playwright.config.ts`; public pages read tables directly with `service_role` and a column-limited `bookings` read instead of "a small set of read functions" (decisions Q3 and Q11); A6 and the input-validation row point to `docs/DATABASE.md` instead of "decided in Phase 4"; L6 records that CLI v3 needs `--remote` and that a pushed migration is never edited; the risks table adds the clock-change rules and their known limitation, the deadlock-retry rule, and notes that the database tests avoid the email limit and already work with the key names.
+- **2026-11-14 (Phase 6)** — Route names in section 2 now match the built shells, following the project owner's brief: `/signup` (was "register"), dashboard sections `availability` and `widget` (was "embed"), and `/booking/[code]` (was `[token]`). The folder list says what exists today. Phase 6 follows the layout of section 2 and A17.
