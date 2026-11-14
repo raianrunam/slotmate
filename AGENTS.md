@@ -56,7 +56,8 @@ Follow this sequence:
 
 ### Verify
 
-- Run appropriate linting, type checks, builds or tests when available.
+- Run appropriate linting, type checks, builds or tests when available: `npx tsc --noEmit`, `npx eslint`, and `npm run test:db` whenever the database or its access rules changed.
+- Database tests use real paths only (see `docs/TESTING.md`): no direct Postgres connection and no extra grants just to make a test pass.
 - Do not claim a check passed unless it was actually executed.
 - Report errors honestly.
 - Explain any verification that could not be performed.
@@ -80,8 +81,11 @@ Security requirements:
 
 Current project boundary:
 
-- Database documentation has been prepared, but SQL migrations have not yet been approved or applied.
-- Do not create, modify or apply SQL migrations, or connect to or modify Supabase, unless the project owner explicitly authorizes that specific task.
+- Migrations 1–7 are applied to the development Supabase project. The design is in `docs/DATABASE.md` (section 9 lists the migrations); the tests are in `docs/TESTING.md`.
+- Never edit a migration that has already been pushed. Any change is a NEW migration, and a new migration needs the project owner's explicit authorization.
+- Do not create or apply migrations, run `supabase db push`, or change Supabase data or settings unless the project owner explicitly authorizes that specific task. Read-only checks (`supabase db query --remote --read-only`) are allowed when a task asks for them.
+- `npm run test:db` is authorized as a verification step. It creates and deletes only throw-away test users (addresses like `slotmate-test-<random>@example.com`, and everything they own) in the linked development project, and must leave nothing behind. Any other write to Supabase still needs the owner's explicit authorization for that task.
+- Supabase CLI v3 needs `--remote` for the linked cloud project. There is no Docker and no local Supabase.
 - Never claim that a database change has been tested against Supabase unless it actually has been.
 
 ## 5. Git and file safety
@@ -89,6 +93,7 @@ Current project boundary:
 - Work on the currently assigned branch.
 - Never switch branches without permission.
 - Never stage, commit, push, reset, rebase or delete files unless explicitly authorized.
+- The repository is PUBLIC. Never commit keys, secrets, the Supabase project reference or personal email addresses. Never stage `.env*` files (only `.env.example`, which has names and no values).
 - Inspect `git status` before and after significant work.
 - Preserve untracked files.
 - Never discard another agent's changes.
@@ -149,3 +154,7 @@ At the end of every implementation task, report:
 7. Whether any database, environment, dependency or Git changes occurred.
 
 Do not claim completion of work that has not been verified.
+
+## 10. Change history
+
+- 2026-11-14 (Phase 5): updated the database boundary (migrations 1–7 are applied; pushed migrations are never edited; CLI v3 needs `--remote`), added the verification commands, the real-paths-only test rule and the narrow authorization of `npm run test:db`, and added the public-repository rule. Claude-specific rules live in `CLAUDE.md`, which imports this file.
