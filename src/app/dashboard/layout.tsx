@@ -22,7 +22,7 @@ export default function DashboardLayout({
       <div className="flex min-w-0 flex-1 flex-col">
         <DashboardHeader />
         <main id="main-content" className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          <div className="mx-auto grid w-full max-w-6xl gap-6">
+          <div className="mx-auto grid w-full max-w-6xl grid-cols-[minmax(0,1fr)] gap-6">
             <Suspense fallback={null}>
               <DowngradeBanner />
             </Suspense>

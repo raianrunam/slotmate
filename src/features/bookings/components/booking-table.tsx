@@ -24,7 +24,7 @@ export function BookingTable({ rows }: { rows: BookingListRow[] }) {
           const when = whenLabel(row.starts_at, row.ends_at, row.timeZone);
           return (
             <TableRow key={row.id} data-testid="booking-row">
-              <TableCell className="font-medium">
+              <TableCell className="whitespace-normal font-medium">
                 <Link href={`/dashboard/bookings/${row.id}`} className="underline-offset-4 hover:underline focus-visible:underline">
                   {row.visitor_name}
                 </Link>
