@@ -58,14 +58,22 @@ test("the secret-key variable name appears only in src/lib/supabase/admin.ts (A4
   expect(offenders).toEqual(["src/lib/supabase/admin.ts"]);
 });
 
-test("the admin module is server-only and only src/features/resources/images.ts imports it", () => {
+// Phase 11: A4 places 1 to 3 (public reads, booking submission, rate limit) live in two
+// server-only modules of the public-booking feature. Nothing else may import the admin module.
+const ADMIN_IMPORTERS = [
+  "src/features/public-booking/actions.ts",
+  "src/features/public-booking/queries.ts",
+  "src/features/resources/images.ts",
+];
+
+test("the admin module is server-only and only the three listed server-only modules import it", () => {
   expect(read(path.join(SRC, "lib/supabase/admin.ts"))).toMatch(/^import "server-only"/m);
   const importers = files
     .filter((f) => rel(f) !== "src/lib/supabase/admin.ts")
     .filter((f) => /supabase\/admin["']/.test(read(f)))
     .map(rel);
-  expect(importers).toEqual(["src/features/resources/images.ts"]);
-  expect(read(path.join(SRC, "features/resources/images.ts"))).toMatch(/^import "server-only"/m);
+  expect(importers).toEqual(ADMIN_IMPORTERS);
+  for (const f of ADMIN_IMPORTERS) expect(read(path.join(process.cwd(), f)), f).toMatch(/^import "server-only"/m);
 });
 
 test("no 'use client' file imports the Storage functions or the admin module", () => {

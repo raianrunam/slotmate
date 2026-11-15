@@ -45,15 +45,14 @@ const ROUTES: readonly ShellRoute[] = [
   { name: "dashboard-analytics", path: "/dashboard/analytics" },
   { name: "dashboard-widget", path: "/dashboard/widget" },
   { name: "dashboard-billing", path: "/dashboard/billing" },
-  { name: "book", path: "/book/sample-workspace" },
-  { name: "booking-status", path: "/booking/sample-code" },
+  // /book/<slug> and /booking/<code> need real data: see tests/ui/booking.spec.ts (Phase 11).
   { name: "embed", path: "/embed/sample-workspace" },
   { name: "design", path: "/design" },
   { name: "not-found", path: "/this-page-does-not-exist", status: 404 },
 ];
 
 // Routes that are also checked in the dark theme (at phone and desktop width).
-const DARK_ROUTES = ["home", "login", "dashboard", "dashboard-bookings", "book", "embed", "design"];
+const DARK_ROUTES = ["home", "login", "dashboard", "dashboard-bookings", "embed", "design"];
 
 async function checkPage(
   page: Page,

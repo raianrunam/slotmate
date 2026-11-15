@@ -7,7 +7,19 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/((?!embed/).*)",
+        // The private status page (A8): never cached, never reveals its address to other sites.
+        source: "/booking/:code",
+        headers: [
+          { key: "Cache-Control", value: "private, no-store, max-age=0" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+        ],
+      },
+      {
+        source: "/((?!embed/|booking/).*)",
         headers: [
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },

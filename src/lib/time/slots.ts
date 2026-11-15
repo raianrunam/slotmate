@@ -277,3 +277,45 @@ export function isBookableStart(input: SlotsInput & { startsAt: Date }): StartCh
 
   return { ok: true, endsAt: new Date(end) };
 }
+
+// ---------------------------------------------------------------------------
+// What a visitor is offered (Phase 11)
+// ---------------------------------------------------------------------------
+
+/** A held time range (a pending or approved booking). Nothing about who booked it. */
+export interface TakenRange {
+  startsAt: Date;
+  endsAt: Date;
+}
+
+/**
+ * Hides a slot that overlaps an EARLIER offered slot of the same day (Phase 10
+ * review finding 26). It only happens on a clocks-forward day with a slot length
+ * that does not divide 60 (45 minutes, for example): two grid slots then overlap
+ * in real time, and the database would refuse whichever is booked second with
+ * "taken". The page offers the earlier one only. Expects slots sorted by start,
+ * as slotsForDay returns them.
+ */
+export function dropOverlappingSlots(slots: readonly Slot[]): Slot[] {
+  const kept: Slot[] = [];
+  let lastEnd = Number.NEGATIVE_INFINITY;
+  for (const slot of slots) {
+    if (slot.startsAt.getTime() < lastEnd) continue;
+    kept.push(slot);
+    lastEnd = slot.endsAt.getTime();
+  }
+  return kept;
+}
+
+/**
+ * Removes the slots that overlap a held range. Same idea as the database rule
+ * (docs/DATABASE.md 7.1): ranges include their start and exclude their end, so a
+ * booking 10:00-11:00 does not block the slot 11:00-12:00.
+ */
+export function dropTakenSlots(slots: readonly Slot[], taken: readonly TakenRange[]): Slot[] {
+  return slots.filter((slot) => {
+    const start = slot.startsAt.getTime();
+    const end = slot.endsAt.getTime();
+    return !taken.some((t) => start < t.endsAt.getTime() && t.startsAt.getTime() < end);
+  });
+}

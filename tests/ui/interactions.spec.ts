@@ -158,11 +158,8 @@ test.describe("shared components", () => {
     }
   });
 
-  test("the booking status page is hidden from search engines and does not leak its address", async ({ page }) => {
-    await page.goto("/booking/sample-code");
-    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
-    await expect(page.locator('meta[name="referrer"]')).toHaveAttribute("content", "no-referrer");
-  });
+  // The booking status page's search-engine and referrer rules are tested with a real booking
+  // in tests/ui/booking.spec.ts (Phase 11).
 
   test("the form fields connect labels, hints and errors", async ({ page }) => {
     await page.goto("/design");
