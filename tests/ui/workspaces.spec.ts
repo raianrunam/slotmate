@@ -386,3 +386,25 @@ test("logged-out visitors cannot open the workspace pages", async ({ page }) => 
     await expect(page).toHaveURL(/\/login\?next=/);
   }
 });
+
+test.describe("review findings (Phase 8)", () => {
+  test("a valid zone missing from older browser lists (Asia/Kolkata) can be saved", async ({ page }) => {
+    const owner = await newOwner();
+    await logIn(page, owner);
+    await page.goto("/dashboard/workspaces/new");
+    await nameField(page).fill("Kolkata office");
+    await zoneField(page).fill("Asia/Kolkata");
+    await page.getByRole("button", { name: "Create workspace" }).click();
+    await expect(page).toHaveURL(/notice=created/);
+    expect((await storedWorkspaces(owner.id))[0].time_zone).toBe("Asia/Kolkata");
+  });
+
+  test("a page number past the end shows the last page, not the empty state", async ({ page }) => {
+    const owner = await newOwner();
+    await addWorkspace(owner, "Only one", `only-${tag()}`);
+    await logIn(page, owner);
+    await page.goto("/dashboard/workspaces?page=7");
+    await expect(page.getByTestId("workspace-card")).toHaveCount(1);
+    await expect(page.getByRole("heading", { name: "No workspaces yet" })).toHaveCount(0);
+  });
+});

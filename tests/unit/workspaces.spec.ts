@@ -58,6 +58,14 @@ test.describe("workspace schema", () => {
     expect(workspaceSchema.safeParse({ ...good, name: "n".repeat(101) }).success).toBe(false);
     expect(workspaceSchema.safeParse({ ...good, description: "d".repeat(1001) }).success).toBe(false);
   });
+  test("valid zones missing from older runtime lists are accepted; offsets and junk are not", () => {
+    for (const ok of ["Asia/Kolkata", "Europe/Kyiv", "Asia/Kathmandu", "Asia/Yangon", "Asia/Ho_Chi_Minh", "GMT", "America/Argentina/Buenos_Aires"]) {
+      expect(isKnownTimeZone(ok), ok).toBe(true);
+    }
+    for (const bad of ["Mars/Olympus", "+02:00", "UTC+2", "", "Europe", "../etc"]) {
+      expect(isKnownTimeZone(bad), bad).toBe(false);
+    }
+  });
   test("the time zone list has real zones and UTC", () => {
     const zones = listTimeZones();
     expect(zones.length).toBeGreaterThan(100);

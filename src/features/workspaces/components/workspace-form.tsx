@@ -102,7 +102,7 @@ export function WorkspaceForm({
         label="Public address"
         error={state.fieldErrors?.slug}
         hint={
-          <span data-testid="slug-hint">
+          <span data-testid="slug-hint" aria-live="polite">
             {problem ? (
               problem
             ) : (

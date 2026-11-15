@@ -58,6 +58,15 @@ export function publicPath(slug: string): string {
 // -----------------------------------------------------------------------------
 let cachedZones: readonly string[] | null = null;
 
+function runtimeAcceptsZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function listTimeZones(): readonly string[] {
   if (cachedZones) return cachedZones;
   let zones: string[] = [];
@@ -66,14 +75,21 @@ export function listTimeZones(): readonly string[] {
   } catch {
     zones = [];
   }
-  // Some runtimes leave out "UTC" although it is a valid zone name.
-  if (!zones.includes("UTC")) zones = [...zones, "UTC"];
+  // Some runtimes leave out valid zone names (for example UTC, or the newer
+  // names Asia/Kolkata and Europe/Kyiv). Add them when the runtime accepts them.
+  for (const extra of ["UTC", "GMT", "Asia/Kolkata", "Asia/Kathmandu", "Asia/Yangon", "Asia/Ho_Chi_Minh", "Europe/Kyiv"]) {
+    if (!zones.includes(extra) && runtimeAcceptsZone(extra)) zones = [...zones, extra];
+  }
   cachedZones = [...zones].sort((a, b) => a.localeCompare(b));
   return cachedZones;
 }
 
+// Accept the listed names, plus any Area/City name or UTC/GMT that the runtime
+// understands (the list can miss valid names). Offsets like "+02:00" are
+// refused. The database trigger is still the final check (invalid_time_zone).
 export function isKnownTimeZone(value: string): boolean {
-  return listTimeZones().includes(value);
+  if (listTimeZones().includes(value)) return true;
+  return /^([A-Za-z_]+(\/[A-Za-z0-9_+-]+)+|UTC|GMT)$/.test(value) && runtimeAcceptsZone(value);
 }
 
 // -----------------------------------------------------------------------------

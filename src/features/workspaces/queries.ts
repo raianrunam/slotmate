@@ -35,6 +35,11 @@ export const getWorkspaceUsage = cache(async (): Promise<WorkspaceUsage> => {
     supabase.from("subscriptions").select("plan, status").maybeSingle(),
     supabase.from("workspaces").select("id", { count: "exact", head: true }),
   ]);
+  if (subscription.error || count.error) {
+    // Never guess a limit from a failed read (it could block a Pro owner).
+    console.error("getWorkspaceUsage failed", { code: (subscription.error ?? count.error)?.code ?? null });
+    throw new Error("Could not load your plan usage.");
+  }
   const plan = effectivePlan(subscription.data);
   const limits = await supabase
     .from("plan_limits")
@@ -63,14 +68,13 @@ export async function listWorkspaces(requestedPage: number): Promise<WorkspacePa
       .order("id", { ascending: true })
       .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
-  let page = Math.max(1, Math.trunc(requestedPage) || 1);
-  let result = await fetchPage(page);
-  const total = result.count ?? 0;
+  // Count first: a request past the last page returns no count, so the page
+  // number is clamped before the rows are read.
+  const counted = await supabase.from("workspaces").select("id", { count: "exact", head: true });
+  const total = counted.count ?? 0;
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  if (page > lastPage) {
-    page = lastPage;
-    result = await fetchPage(page);
-  }
+  const page = Math.min(Math.max(1, Math.trunc(requestedPage) || 1), lastPage);
+  const result = await fetchPage(page);
   if (result.error) {
     console.error("listWorkspaces failed", { code: result.error.code });
     throw new Error("Could not load your workspaces.");

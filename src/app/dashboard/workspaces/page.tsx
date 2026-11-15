@@ -31,7 +31,7 @@ async function WorkspacesContent({ searchParams }: { searchParams: SearchParams 
     getWorkspaceUsage(),
     listWorkspaces(Number.parseInt(params.page ?? "1", 10)),
   ]);
-  const notice = params.notice ? NOTICES[params.notice] : undefined;
+  const notice = params.notice && Object.hasOwn(NOTICES, params.notice) ? NOTICES[params.notice] : undefined;
   const anyLocked = list.rows.some((w) => w.is_locked);
 
   return (
