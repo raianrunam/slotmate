@@ -686,6 +686,10 @@ The rules, in terms of what the function does:
    - Already there but `processed_at` empty (an earlier try crashed halfway) → returns **`claimed`** so Stripe's retry can finish the job.
 3. The handler asks Stripe for the subscription's *current* state, saves it to `subscriptions`, then calls `mark_stripe_event_processed(event_id)`.
 4. Because the saved data always comes from Stripe's current answer, handling a message twice, or two copies at once, ends in the same state. Out-of-order messages cannot leave stale data either.
+   - **Only our Pro price counts.** A subscription that does not contain `STRIPE_PRO_PRICE_ID` (another product, a plan switch in the portal) changes nothing; the message is marked processed.
+   - **One subscription per owner.** An ending of an *old* subscription never wipes a different current one, and a Pro state for a *different* subscription never replaces the stored one (a second payment would otherwise take over and the first would keep billing with nothing pointing at it). Both are ignored and marked processed.
+   - **Different messages at the same time** (for example `updated` and `deleted`) can each read an older state. After saving, the handler asks Stripe again and corrects the row if the state moved (twice at most), so the last answer written is Stripe's latest. No SQL lock is needed (no new migration).
+   - Concurrent deliveries are therefore harmless: identical copies end in the same state, and different messages end in Stripe's current state.
 5. During later webhooks, rows older than 30 days are deleted. There is no scheduled job.
 
 ### 7.7 Plan limits, allowed status changes and the read-only subscription (A6)
@@ -735,6 +739,7 @@ When Pro ends, nothing is deleted (BILL-09). If the owner is over the Free limit
   - the owner may still **delete** it, which is the way to get back within the limits;
   - it still counts toward the plan limit, so the owner cannot create new items past the limit while locked items exist.
 - **Lifting the lock.** `reconcile_locks` sets all `is_locked` back to `false` when the owner is within their plan's limits: after an upgrade (via the subscription trigger), or after deleting enough items (via after-delete triggers on `workspaces` and `resources`).
+- **Changing the selection again is allowed (intended; owner decision, Phase 15 review).** While the owner is still over the plan's limits, `apply_downgrade_selection` accepts a new valid selection, so the owner may move the active workspace and resources as often as they like. This gives no extra capacity: at any moment only **one** workspace and **up to three** resources are active, and locked items still count toward the limits. The function refuses with `selection_not_needed` once the owner is within the limits.
 - Existing pending bookings on a locked resource stay as they are; they are read-only too.
 - The dashboard selection is required. The Server Action checks ownership and plan limits before calling the protected function; the function trusts only the server role and applies the supplied selection atomically. If a selection is invalid or absent, no items are unlocked.
 - **As built (migration 6; owner decisions Q5, Q9).**
@@ -761,7 +766,7 @@ Several functions take row locks so that one owner's changes run one after anoth
 
 The known cases: two overlapping deletes by the same owner; a delete while a webhook or downgrade reconcile runs; a booking while a downgrade or upgrade changes locks; the first booking of a month while one of those runs; creating a resource while its workspace is being deleted. The time window is small.
 
-**Rule:** every Server Action that writes, **including booking submission**, retries the call once when it receives `40P01`. The Stripe webhook does not retry itself: it returns an error and relies on Stripe's own retry (which is safe, section 7.6). There is no lock re-ordering in the SQL. T11, T12 and T16 should include a case that checks the retry.
+**Rule:** every Server Action that writes, **including booking submission**, retries the call once when it receives `40P01`. The Stripe webhook retries **once** on `40P01` too (owner decision, Phase 15 review; safe because a cancelled transaction is undone and the saved state is always re-read from Stripe, section 7.6); for any other failure it returns an error and relies on Stripe's own retry. The header comment of the pushed functions migration says the webhook does not retry itself; that comment is **outdated** and stays as it is, because a pushed migration is never edited. There is no lock re-ordering in the SQL. T11, T12 and T16 should include a case that checks the retry.
 
 ---
 

@@ -40,8 +40,9 @@ import {
 // always comes from Stripe's current answer (DATABASE.md 7.6). Only error codes are logged,
 // never message bodies, customer data or keys.
 //
-// NOTE (owner to confirm): a write cancelled by a deadlock (40P01) is retried once here, as the
-// Phase 15 brief asked; DATABASE.md 7.10 says the webhook relies on Stripe's retry instead.
+// A write cancelled by a deadlock (40P01) is retried once here (owner decision, DATABASE.md 7.10);
+// any other failure answers 500 and relies on Stripe's retry. The header comment of the pushed functions
+// migration ("the webhook does not retry itself") is outdated and is not edited.
 
 const MAX_BODY_BYTES = 1_000_000;
 
