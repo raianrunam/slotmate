@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeftIcon, LockIcon } from "lucide-react";
+import { ArrowLeftIcon, CalendarClockIcon, LockIcon } from "lucide-react";
 import { OwnerGate } from "@/components/owner-gate";
 import { PageHeader } from "@/components/page-header";
 import { FormMessage } from "@/components/form-message";
@@ -36,11 +36,18 @@ async function ResourceContent({ params, searchParams }: Props) {
         title={resource.name}
         description={locked ? "This resource is locked and read-only." : "Edit this resource."}
         actions={
-          <Button asChild variant="outline" className="h-10 sm:h-8">
-            <Link href="/dashboard/resources">
-              <ArrowLeftIcon aria-hidden="true" /> Resources
-            </Link>
-          </Button>
+          <>
+            <Button asChild variant="outline" className="h-10 sm:h-8">
+              <Link href={`/dashboard/resources/${resource.id}/availability`}>
+                <CalendarClockIcon aria-hidden="true" /> {locked ? "View opening hours" : "Opening hours"}
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="h-10 sm:h-8">
+              <Link href="/dashboard/resources">
+                <ArrowLeftIcon aria-hidden="true" /> Resources
+              </Link>
+            </Button>
+          </>
         }
       />
       {notice === "created" ? <FormMessage tone="success">Resource created. You can add an image below.</FormMessage> : null}

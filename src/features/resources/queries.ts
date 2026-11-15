@@ -20,11 +20,11 @@ export interface ResourceRow {
   capacity: number;
   created_at: string;
   /** The workspace this resource is in (joined). */
-  workspaces: { id: string; name: string; is_locked: boolean } | null;
+  workspaces: { id: string; name: string; is_locked: boolean; time_zone: string } | null;
 }
 
 const COLUMNS =
-  "id, workspace_id, name, description, image_path, is_available, is_locked, slot_minutes, capacity, created_at, workspaces(id, name, is_locked)";
+  "id, workspace_id, name, description, image_path, is_available, is_locked, slot_minutes, capacity, created_at, workspaces(id, name, is_locked, time_zone)";
 
 /** The public address of a stored image (the bucket is public, S1). */
 export function publicImageUrl(path: string | null): string | null {
