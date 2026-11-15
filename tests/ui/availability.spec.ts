@@ -282,7 +282,7 @@ test.describe("navigation", () => {
     await expect(card).toContainText("Room 1");
     await expect(card).toContainText("Mon 09:00–17:00");
     await expect(card).toContainText("Tue 10:00–24:00");
-    await card.getByRole("link", { name: "Edit opening hours of Room 1" }).click();
+    await card.getByRole("link", { name: "Edit hours of Room 1" }).click();
     await expect(page).toHaveURL(new RegExp(`/dashboard/resources/${resourceId}/availability$`));
 
     await page.goto(`/dashboard/resources/${resourceId}`);

@@ -2,13 +2,13 @@ import { slotsForRange, todayInZone, type AvailabilityWindow } from "@/lib/time/
 
 const DAYS_SHOWN = 7;
 
-// "Mon 16 Nov" for a calendar date such as 2026-11-16 (no time zone involved: it
-// is already the date in the workspace's zone).
-function dayLabel(date: string): string {
+// "Mon 16 Nov" (or "Monday 16 November") for a calendar date such as 2026-11-16 (no
+// time zone involved: it is already the date in the workspace's zone).
+function dayLabel(date: string, long = false): string {
   return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", {
-    weekday: "short",
+    weekday: long ? "long" : "short",
     day: "numeric",
-    month: "short",
+    month: long ? "long" : "short",
     timeZone: "UTC",
   });
 }
@@ -37,9 +37,10 @@ export function SlotPreview({
       </h2>
       <p className="text-sm text-muted-foreground" data-testid="preview-zone">
         These are the start times visitors will be offered, in the workspace&apos;s time zone,{" "}
-        <strong className="font-medium text-foreground">{timeZone}</strong> (today there is{" "}
-        {dayLabel(today)}). Slots are {slotMinutes} {slotMinutes === 1 ? "minute" : "minutes"} long. Times that
-        have already started are not shown. This shows the hours you last saved.
+        <strong className="font-medium text-foreground">{timeZone}</strong>. Today is {dayLabel(today, true)}.
+        Slots are {slotMinutes} {slotMinutes === 1 ? "minute" : "minutes"} long. Times that have already
+        started are not shown. This shows the offered times, not the free times: times that are already
+        booked are still listed here. It uses the hours you last saved.
       </p>
       <ul className="grid gap-2" data-testid="slot-preview">
         {days.map((day) => {

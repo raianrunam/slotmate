@@ -1,11 +1,11 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { FormMessage } from "@/components/form-message";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { saveAvailability } from "@/features/availability/actions";
-import { fieldNames, WEEKDAYS } from "@/features/availability/schema";
+import { fieldNames, TIME_HINT, WEEKDAYS } from "@/features/availability/schema";
 import { initialAvailabilityState } from "@/features/availability/state";
 
 export interface DayValues {
@@ -35,6 +35,21 @@ export function AvailabilityEditor({
 
   const set = (n: number, patch: Partial<DayValues>) => setDays((d) => ({ ...d, [n]: { ...d[n], ...patch } }));
 
+  // After a failed save, move focus to the first field with a problem (Phase 10 review
+  // finding 11): with seven days on a phone the error may be far off-screen. A new
+  // state object arrives after every save, so this runs once per failed save.
+  useEffect(() => {
+    if (!state.fieldErrors) return;
+    for (const { n } of WEEKDAYS) {
+      const names = fieldNames(n);
+      const bad = [names.opens, names.closes].find((name) => state.fieldErrors?.[name]);
+      if (bad) {
+        document.getElementById(bad)?.focus();
+        return;
+      }
+    }
+  }, [state]);
+
   return (
     <form action={action} className="grid max-w-2xl gap-4" noValidate>
       <input type="hidden" name="id" value={resourceId} />
@@ -45,10 +60,9 @@ export function AvailabilityEditor({
         </FormMessage>
       ) : null}
 
-      <p className="text-sm text-muted-foreground">
-        Times use the 24-hour clock in the workspace&apos;s time zone,{" "}
-        <strong className="font-medium text-foreground">{timeZone}</strong>. Use 24:00 as the closing
-        time for the end of the day. Each day has one opening window.
+      <p id="time-hint" className="text-sm text-muted-foreground">
+        {TIME_HINT} Times are in the workspace&apos;s time zone,{" "}
+        <strong className="font-medium text-foreground">{timeZone}</strong>. Each day has one opening window.
       </p>
 
       <div className="grid gap-3">
@@ -84,9 +98,14 @@ export function AvailabilityEditor({
                       onChange={(e) => set(n, { opens: e.target.value })}
                       disabled={readOnly || !day.open}
                       autoComplete="off"
+                      inputMode="text"
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      pattern="[0-9]{1,2}:?[0-9]{2}"
                       placeholder="09:00"
                       aria-invalid={opensError ? true : undefined}
-                      aria-describedby={opensError ? `opens-${n}-error` : undefined}
+                      aria-describedby={opensError ? `time-hint opens-${n}-error` : "time-hint"}
                       className="h-10 w-28 text-base md:text-sm"
                     />
                     {opensError ? (
@@ -106,9 +125,14 @@ export function AvailabilityEditor({
                       onChange={(e) => set(n, { closes: e.target.value })}
                       disabled={readOnly || !day.open}
                       autoComplete="off"
+                      inputMode="text"
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      pattern="[0-9]{1,2}:?[0-9]{2}"
                       placeholder="17:00"
                       aria-invalid={closesError ? true : undefined}
-                      aria-describedby={closesError ? `closes-${n}-error` : undefined}
+                      aria-describedby={closesError ? `time-hint closes-${n}-error` : "time-hint"}
                       className="h-10 w-28 text-base md:text-sm"
                     />
                     {closesError ? (

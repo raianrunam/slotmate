@@ -69,7 +69,7 @@ async function AvailabilityOverview({ searchParams }: { searchParams: SearchPara
                       <Button asChild variant="outline" className="h-10 sm:h-8">
                         <Link
                           href={`/dashboard/resources/${resource.id}/availability`}
-                          aria-label={`${resource.is_locked ? "View" : "Edit"} opening hours of ${resource.name}`}
+                          aria-label={`${resource.is_locked ? "View" : "Edit"} hours of ${resource.name}`}
                         >
                           <CalendarClockIcon aria-hidden="true" /> {resource.is_locked ? "View hours" : "Edit hours"}
                         </Link>

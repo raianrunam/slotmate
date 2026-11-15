@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { ALL_FIELD_NAMES, clockText, fieldNames, MESSAGES, parseDays, toWindows } from "../../src/features/availability/schema";
+import { ALL_FIELD_NAMES, clockText, fieldNames, MESSAGES, parseDays, parseTypedClock, toWindows } from "../../src/features/availability/schema";
 
 // The weekly opening-hours form (AVAIL-01, AVAIL-02, DB9).
 
@@ -16,6 +16,26 @@ function form(days: Record<number, { open?: boolean; opens?: string; closes?: st
   }
   return out;
 }
+
+test.describe("typed times (Phase 10 review finding 10)", () => {
+  test('"09:30", "9:30", "0930" and "930" all mean 09:30; 2400 and 24:00 are the end of the day', () => {
+    for (const text of ["09:30", "9:30", "0930", "930", " 0930 "]) expect(parseTypedClock(text), text).toBe(9 * 3600 + 30 * 60);
+    expect(parseTypedClock("2400")).toBe(86400);
+    expect(parseTypedClock("24:00")).toBe(86400);
+    expect(parseTypedClock("0000")).toBe(0);
+  });
+  test("nonsense is still refused", () => {
+    for (const text of ["", "9", "09", "99:00", "0960", "2401", "24:30", "12345", "9:3", "ab:cd", "09.30"]) {
+      expect(parseTypedClock(text), text).toBeNaN();
+    }
+  });
+  test("the form accepts a phone-keyboard time and normalises it", () => {
+    expect(parseDays(form({ 1: { open: true, opens: "930", closes: "1730" } }))).toMatchObject({
+      ok: true,
+      open: [{ weekday: 1, opens_at: "09:30", closes_at: "17:30" }],
+    });
+  });
+});
 
 test.describe("parseDays", () => {
   test("open days become rows, closed days are listed, closed days ignore their times", () => {

@@ -21,6 +21,21 @@ export const MESSAGES = {
   id: "That resource could not be found.",
 } as const;
 
+/**
+ * Reads a time typed by a person (Phase 10 review finding 10): "09:30", "9:30",
+ * "0930" and "930" all mean 09:30; "24:00" or "2400" is the end of the day. The
+ * phone keyboard without a colon key can therefore be used. Anything else is NaN.
+ * (parseClock itself stays strict: it reads times that come from the database.)
+ */
+export function parseTypedClock(value: string): number {
+  const text = value.trim();
+  const digits = /^(\d{1,2})(\d{2})$/.exec(text); // "930" or "0930"
+  return parseClock(digits ? `${digits[1]}:${digits[2]}` : text);
+}
+
+/** The hint shown under the times and read by screen readers. */
+export const TIME_HINT = "Use the 24-hour clock, for example 09:00 or 0900. Use 24:00 as the closing time for the end of the day.";
+
 /** The form field names for one weekday. */
 export const fieldNames = (n: number) => ({ open: `open-${n}`, opens: `opens-${n}`, closes: `closes-${n}` });
 
@@ -53,8 +68,8 @@ export function parseDays(fields: Record<string, string>): ParsedDays {
       closedDays.push(n);
       continue;
     }
-    const opens = parseClock(fields[names.opens] ?? "");
-    const closes = parseClock(fields[names.closes] ?? "");
+    const opens = parseTypedClock(fields[names.opens] ?? "");
+    const closes = parseTypedClock(fields[names.closes] ?? "");
     let bad = false;
     if (Number.isNaN(opens) || opens >= 86400 || opens % 60 !== 0) {
       errors[names.opens] = MESSAGES.opensBad;
