@@ -1,7 +1,7 @@
-import { randomBytes } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
-import { anonClient, serviceClient, type Db } from "../db/helpers";
-import { createTestUser, deleteTestUser, LOGGED_OUT, type TestUser } from "./owner";
+import { serviceClient } from "../db/helpers";
+import { LOGGED_OUT } from "./owner";
+import { addWorkspace, cleanupOwners, logIn, newOwner, tag } from "./owners";
 
 // Workspace management checks (Phase 8: WORK-01 to WORK-04, D12, D13, D20).
 // Every test uses its OWN throw-away owner, logged in through the real login
@@ -12,44 +12,7 @@ import { createTestUser, deleteTestUser, LOGGED_OUT, type TestUser } from "./own
 
 test.use({ storageState: LOGGED_OUT, timezoneId: "Europe/London" });
 
-const createdIds: string[] = [];
-test.afterAll(async () => {
-  for (const id of createdIds) await deleteTestUser(id);
-});
-
-interface TestOwner extends TestUser {
-  /** The owner's own logged-in API client (role authenticated, RLS applies). */
-  client: Db;
-}
-
-async function newOwner(): Promise<TestOwner> {
-  const user = await createTestUser({ confirmed: true });
-  createdIds.push(user.id);
-  const client = anonClient();
-  const signIn = await client.auth.signInWithPassword({ email: user.email, password: user.password });
-  if (signIn.error) throw new Error(`owner sign-in failed: ${signIn.error.message}`);
-  return { ...user, client };
-}
-
-async function logIn(page: Page, owner: TestUser) {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(owner.email);
-  await page.getByLabel("Password").fill(owner.password);
-  await page.getByRole("button", { name: "Log in" }).click();
-  await page.waitForURL("**/dashboard");
-}
-
-const tag = () => randomBytes(4).toString("hex");
-
-async function addWorkspace(owner: TestOwner, name: string, slug: string, timeZone = "UTC") {
-  const { data, error } = await owner.client
-    .from("workspaces")
-    .insert({ owner_id: owner.id, name, slug, time_zone: timeZone })
-    .select("id")
-    .single();
-  if (error) throw new Error(`test workspace insert failed: ${error.message}`);
-  return data.id;
-}
+test.afterAll(cleanupOwners);
 
 async function storedWorkspaces(ownerId: string) {
   const { data, error } = await serviceClient()
@@ -406,5 +369,59 @@ test.describe("review findings (Phase 8)", () => {
     await page.goto("/dashboard/workspaces?page=7");
     await expect(page.getByTestId("workspace-card")).toHaveCount(1);
     await expect(page.getByRole("heading", { name: "No workspaces yet" })).toHaveCount(0);
+  });
+});
+
+test.describe("another owner's workspace and forged fields (the server refuses) - Phase 8 carry-over", () => {
+  test("update with a foreign id plus forged owner_id and is_locked changes nothing and shows the generic message", async ({ page }) => {
+    const victim = await newOwner();
+    const foreignId = await addWorkspace(victim, "Victim workspace", `victim-${tag()}`);
+    const owner = await newOwner();
+    const ownId = await addWorkspace(owner, "My workspace", `mine-${tag()}`);
+    await logIn(page, owner);
+
+    await page.goto(`/dashboard/workspaces/${ownId}`);
+    await nameField(page).fill("Hacked name");
+    await page.evaluate(
+      ({ foreignId, ownerId }) => {
+        const form = document.querySelector<HTMLFormElement>("form:has(input[name=id])")!;
+        form.querySelector<HTMLInputElement>("input[name=id]")!.value = foreignId;
+        for (const [name, value] of [["owner_id", ownerId], ["is_locked", "false"]]) {
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = name;
+          input.value = value;
+          form.appendChild(input);
+        }
+      },
+      { foreignId, ownerId: owner.id },
+    );
+    await page.getByRole("button", { name: "Save changes" }).click();
+
+    await expect(page.getByText(/cannot make this change/i)).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(/violates|row-level|policy|permission denied/i);
+    const [theirs] = await storedWorkspaces(victim.id);
+    expect(theirs).toMatchObject({ id: foreignId, name: "Victim workspace" });
+    const [mine] = await storedWorkspaces(owner.id);
+    expect(mine.name, "the owner's own workspace is unchanged too").toBe("My workspace");
+  });
+
+  test("delete with a foreign id deletes nothing and shows the generic message", async ({ page }) => {
+    const victim = await newOwner();
+    const foreignId = await addWorkspace(victim, "Victim workspace", `victim-${tag()}`);
+    const owner = await newOwner();
+    await addWorkspace(owner, "My workspace", `mine-${tag()}`);
+    await logIn(page, owner);
+
+    await page.goto("/dashboard/workspaces");
+    await page.getByRole("button", { name: "Delete workspace My workspace" }).click();
+    await page.evaluate((foreignId) => {
+      document.querySelector<HTMLInputElement>("form input[name=id]")!.value = foreignId;
+    }, foreignId);
+    await page.getByRole("alertdialog").getByRole("button", { name: "Delete workspace", exact: true }).click();
+
+    await expect(page.getByText(/cannot make this change/i)).toBeVisible();
+    expect(await storedWorkspaces(victim.id), "the foreign workspace still exists").toHaveLength(1);
+    expect(await storedWorkspaces(owner.id), "and the owner's own was not deleted either").toHaveLength(1);
   });
 });

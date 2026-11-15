@@ -51,9 +51,29 @@ test('no "use client" file imports Supabase or a server-only module (A1)', () =>
   expect(bad).toEqual([]);
 });
 
-test("the secret-key variable name never appears in src/ (A4)", () => {
+// Phase 9: the secret key is read in exactly ONE module (the admin connection,
+// A4 "place 5": resource image Storage functions and the clean-up before deletes).
+test("the secret-key variable name appears only in src/lib/supabase/admin.ts (A4)", () => {
   const offenders = files.filter((f) => /SUPABASE_SECRET_KEY|SERVICE_ROLE/i.test(read(f))).map(rel);
-  expect(offenders).toEqual([]);
+  expect(offenders).toEqual(["src/lib/supabase/admin.ts"]);
+});
+
+test("the admin module is server-only and only src/features/resources/images.ts imports it", () => {
+  expect(read(path.join(SRC, "lib/supabase/admin.ts"))).toMatch(/^import "server-only"/m);
+  const importers = files
+    .filter((f) => rel(f) !== "src/lib/supabase/admin.ts")
+    .filter((f) => /supabase\/admin["']/.test(read(f)))
+    .map(rel);
+  expect(importers).toEqual(["src/features/resources/images.ts"]);
+  expect(read(path.join(SRC, "features/resources/images.ts"))).toMatch(/^import "server-only"/m);
+});
+
+test("no 'use client' file imports the Storage functions or the admin module", () => {
+  const bad = files
+    .filter((f) => /^\s*["']use client["']/.test(read(f)))
+    .filter((f) => /features\/resources\/images|supabase\/admin/.test(read(f)))
+    .map(rel);
+  expect(bad).toEqual([]);
 });
 
 test("modules that touch the login session are marked server-only", () => {
