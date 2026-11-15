@@ -43,7 +43,7 @@ test("PUB-01: the owner can copy the full public address from the workspace list
   await addWorkspace(owner, "Copy me", slug);
   await logIn(page, owner);
   await page.goto("/dashboard/workspaces");
-  const button = page.getByRole("button", { name: "Copy the public address of Copy me" });
+  const button = page.getByRole("button", { name: "Copy link: public address of Copy me" });
   await waitForHydration(button);
   await button.click();
   await expect(button).toHaveText("Copied");

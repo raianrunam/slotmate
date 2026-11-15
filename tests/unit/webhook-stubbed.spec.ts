@@ -43,25 +43,41 @@ type Row = {
   cancel_at_period_end: boolean;
 };
 
-function fakeAdmin(row: Row) {
+/** afterFirstRead runs once, right after the handler has read the owner row (to change it behind the handler's back). */
+function fakeAdmin(row: Row, afterFirstRead: () => void = () => undefined) {
+  let readDone = false;
   const writes: Partial<Row>[] = [];
   const admin = {
     rpc: async (name: string) => ({ data: name === "claim_stripe_event" ? "claimed" : null, error: null }),
     from: () => ({
       select: () => ({
         eq: (column: keyof Row, value: string) => ({
-          maybeSingle: async () => ({ data: row[column] === value ? { ...row } : null, error: null }),
+          maybeSingle: async () => {
+            const data = row[column] === value ? { ...row } : null;
+            if (data && !readDone) {
+              readDone = true;
+              afterFirstRead();
+            }
+            return { data, error: null };
+          },
         }),
       }),
-      update: (patch: Partial<Row>) => ({
-        eq: () => ({
+      update: (patch: Partial<Row>) => {
+        // Honours every filter, like the database: a write whose condition no longer matches changes nothing.
+        const filters: [keyof Row, string | null][] = [];
+        const builder = {
+          eq: (column: keyof Row, value: string) => (filters.push([column, value]), builder),
+          is: (column: keyof Row, value: null) => (filters.push([column, value]), builder),
           select: async () => {
+            const matches = filters.every(([column, value]) => row[column] === value);
+            if (!matches) return { data: [], error: null };
             writes.push(patch);
             Object.assign(row, patch);
             return { data: [{ owner_id: row.owner_id }], error: null };
           },
-        }),
-      }),
+        };
+        return builder;
+      },
     }),
   };
   return { admin: admin as never, writes };
@@ -87,11 +103,12 @@ const subscription = (id: string, status: string, price = PRO) => ({
 });
 
 /** Answers per subscription id, in order; the last answer repeats. Unknown id -> resource_missing. */
-function stubStripe(answers: Record<string, unknown[]>, calls: string[] = []) {
+function stubStripe(answers: Record<string, unknown[]>, calls: string[] = [], onRetrieve: (id: string) => void = () => undefined, refundFails = false) {
   const stripe = new Stripe(KEY);
   const queue = Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, [...v]]));
   const set = (target: object, name: string, fn: unknown) => ((target as Record<string, unknown>)[name] = fn);
   set(stripe.subscriptions, "retrieve", async (id: string) => {
+    onRetrieve(id);
     const list = queue[id];
     if (!list?.length) throw Object.assign(new Error("none"), { code: "resource_missing" });
     return list.length > 1 ? list.shift() : list[0];
@@ -101,8 +118,10 @@ function stubStripe(answers: Record<string, unknown[]>, calls: string[] = []) {
     return {};
   });
   set(stripe.invoicePayments, "list", async () => ({ data: [{ payment: { type: "payment_intent", payment_intent: "pi_extra" } }] }));
-  set(stripe.refunds, "create", async (p: { payment_intent: string }) => {
-    calls.push(`refund ${p.payment_intent}`);
+  set(stripe.refunds, "create", async (p: { payment_intent: string }, options?: { idempotencyKey?: string }) => {
+    if (refundFails) throw Object.assign(new Error("refund failed"), { code: "charge_already_refunded_or_other" });
+    // The fixed idempotency key makes a retry unable to refund twice: a missing or wrong key shows in the calls.
+    calls.push(options?.idempotencyKey === `slotmate-extra-refund-${p.payment_intent}` ? `refund ${p.payment_intent}` : `refund ${p.payment_intent} (NO KEY)`);
     return {};
   });
   return stripe;
@@ -219,4 +238,38 @@ test("LOW-1: a rate-limit secret shorter than 32 characters fails closed; the lo
     if (before === undefined) delete process.env.RATE_LIMIT_SECRET;
     else process.env.RATE_LIMIT_SECRET = before;
   }
+});
+
+test("Phase 17 MEDIUM-1: a write based on an OLD copy of the row changes nothing (500, retried with a fresh read)", async () => {
+  // The owner has no subscription when the handler reads the row; while it waits for Stripe, another delivery links sub_other.
+  const row = storedRow(null);
+  const { admin, writes } = fakeAdmin(row, () => Object.assign(row, { plan: "pro", status: "active", stripe_subscription_id: "sub_other" }));
+  const stripe = stubStripe({ sub_a: [subscription("sub_a", "canceled")] });
+  const res = await send(stripe, admin, "customer.subscription.updated", { id: "sub_a", customer: "cus_1" });
+  expect(res.status).toBe(500);
+  expect(writes, "the stale write was refused by its condition").toEqual([]);
+  expect(row.stripe_subscription_id, "the newer link survived").toBe("sub_other");
+  expect(row.plan).toBe("pro");
+});
+
+test("Phase 17 MEDIUM-1: the extra subscription is not cancelled when the stored one changed meanwhile", async () => {
+  const row = storedRow();
+  const { admin } = fakeAdmin(row, () => {
+    row.stripe_subscription_id = "sub_changed"; // changes right after the handler read the row
+  });
+  const calls: string[] = [];
+  const stripe = stubStripe({ sub_stored: [subscription("sub_stored", "active")], sub_second: [subscription("sub_second", "active")] }, calls);
+  const res = await send(stripe, admin, "customer.subscription.created", { id: "sub_second", customer: "cus_1" });
+  expect(res.status).toBe(500);
+  expect(calls).toEqual([]);
+});
+
+test("Phase 17: a failed refund leaves the extra subscription alive (500) so the next delivery tries again", async () => {
+  const row = storedRow();
+  const { admin } = fakeAdmin(row);
+  const calls: string[] = [];
+  const stripe = stubStripe({ sub_stored: [subscription("sub_stored", "active")], sub_second: [subscription("sub_second", "active")] }, calls, () => undefined, true);
+  const res = await send(stripe, admin, "customer.subscription.created", { id: "sub_second", customer: "cus_1" });
+  expect(res.status).toBe(500);
+  expect(calls, "no cancel after a failed refund").toEqual([]);
 });

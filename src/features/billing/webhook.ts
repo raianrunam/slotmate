@@ -133,15 +133,44 @@ async function findOwner(
   return res.data ? toMatch(res.data) : null;
 }
 
-async function saveRow(admin: Admin, ownerId: string, row: SubscriptionRow): Promise<boolean> {
-  const res = await withDeadlockRetry(() =>
-    admin.from("subscriptions").update(row).eq("owner_id", ownerId).select("owner_id"),
-  );
+/**
+ * Saves the row ONLY IF the owner's stored subscription id is still the one we based the decision on
+ * (Phase 17 review MEDIUM-1: two deliveries for different subscriptions of one owner could each act on an
+ * old copy and the later write silently won). "conflict" = someone else changed it meanwhile: answer 500
+ * and let Stripe's retry decide again from a fresh read.
+ */
+async function saveRow(
+  admin: Admin,
+  ownerId: string,
+  row: SubscriptionRow,
+  expectedSubscriptionId: string | null,
+): Promise<"ok" | "conflict" | "error"> {
+  const res = await withDeadlockRetry(() => {
+    const base = admin.from("subscriptions").update(row).eq("owner_id", ownerId);
+    return (expectedSubscriptionId === null
+      ? base.is("stripe_subscription_id", null)
+      : base.eq("stripe_subscription_id", expectedSubscriptionId)
+    ).select("owner_id");
+  });
   if (res.error) {
     logFailure("save_subscription", res.error);
-    return false;
+    return "error";
   }
-  return true;
+  if (!res.data || res.data.length !== 1) {
+    console.error("stripe webhook skipped", { step: "save_conflict", code: null });
+    return "conflict";
+  }
+  return "ok";
+}
+
+/** The subscription id stored for this owner right now (null = none, "error" = could not read). */
+async function currentStoredId(admin: Admin, ownerId: string): Promise<string | null | "error"> {
+  const res = await admin.from("subscriptions").select("stripe_subscription_id").eq("owner_id", ownerId).maybeSingle();
+  if (res.error) {
+    logFailure("reread_subscription", res.error);
+    return "error";
+  }
+  return res.data?.stripe_subscription_id ?? null;
 }
 
 /** Stripe's current answer. null = Stripe no longer has it; "error" = try again later. */
@@ -242,6 +271,8 @@ async function handle(request: Request, deps: WebhookDeps): Promise<Response> {
 
   const decision = decideWrite(row, match.currentSubscriptionId, target.subscriptionId!);
   if (decision === "ignore_second" && first) {
+    // The decision was made on a row read a moment ago: read it again, and only go on if it still holds the same subscription.
+    if ((await currentStoredId(admin, match.ownerId)) !== match.currentSubscriptionId) return tryAgain();
     // A second paid subscription for an owner who already has one (MEDIUM-2 of Phase 16): refund and cancel it.
     const outcome = await cancelExtraSubscription(stripe, first, match.currentSubscriptionId!);
     if (outcome === "retry") return tryAgain();
@@ -249,7 +280,7 @@ async function handle(request: Request, deps: WebhookDeps): Promise<Response> {
   }
   if (decision !== "save") return await skip(decision);
 
-  if (!(await saveRow(admin, match.ownerId, row))) return tryAgain();
+  if ((await saveRow(admin, match.ownerId, row, match.currentSubscriptionId)) !== "ok") return tryAgain();
 
   // Two different messages (for example updated and deleted) can run at once and each read an older state.
   // Ask Stripe again and correct the row if it moved meanwhile (twice at most).
@@ -260,7 +291,7 @@ async function handle(request: Request, deps: WebhookDeps): Promise<Response> {
     const next = rowFromStripe(fresh, proPriceId);
     if (next.plan === "free" && next.stripe_customer_id === null) next.stripe_customer_id = row.stripe_customer_id;
     if (sameRow(next, row)) break;
-    if (!(await saveRow(admin, match.ownerId, next))) return tryAgain();
+    if ((await saveRow(admin, match.ownerId, next, row.stripe_subscription_id)) !== "ok") return tryAgain();
     row = next;
   }
   return await markProcessed();
@@ -293,7 +324,12 @@ async function cancelExtraSubscription(
         const pi = p.payment.payment_intent;
         const piId = typeof pi === "string" ? pi : (pi?.id ?? null);
         if (!piId) continue;
-        await stripe.refunds.create({ payment_intent: piId }, { idempotencyKey: `slotmate-extra-refund-${piId}` });
+        try {
+          await stripe.refunds.create({ payment_intent: piId }, { idempotencyKey: `slotmate-extra-refund-${piId}` });
+        } catch (refundError) {
+          // Refunded already (a retry after Stripe's 24-hour idempotency window): that part is done, go on to the cancel.
+          if ((refundError as { code?: string } | null)?.code !== "charge_already_refunded") throw refundError;
+        }
       }
     }
     await stripe.subscriptions.cancel(extra.id, { prorate: false, invoice_now: false });

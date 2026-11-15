@@ -20,7 +20,7 @@ export function CopyAddress({ path, name }: { path: string; name: string }) {
 
   return (
     <span className="inline-flex items-center gap-2">
-      <Button type="button" variant="outline" size="sm" onClick={copy} aria-label={`Copy the public address of ${name}`}>
+      <Button type="button" variant="outline" size="sm" onClick={copy} aria-label={`Copy link: public address of ${name}`}>
         {state === "copied" ? <CheckIcon aria-hidden="true" data-icon="inline-start" /> : <CopyIcon aria-hidden="true" data-icon="inline-start" />}
         {state === "copied" ? "Copied" : "Copy link"}
       </Button>
