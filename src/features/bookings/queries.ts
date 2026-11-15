@@ -214,6 +214,9 @@ export async function getPendingRequests(limit = 5): Promise<BookingListRow[]> {
 export interface OverviewStats {
   total: number;
   pending: number;
+  /** All approved and all rejected requests (DASH-04), whatever the month. */
+  approved: number;
+  rejected: number;
   /** Approved bookings whose approval happened in the current UTC month (updated_at: an approved booking only changes again when it is cancelled). */
   approvedThisMonth: number;
   plan: PlanId;
@@ -230,14 +233,16 @@ export async function getOverviewStats(now = new Date()): Promise<OverviewStats>
   const supabase = await createClient();
   const month = firstOfUtcMonth(now);
   const monthStart = `${month}T00:00:00Z`;
-  const [total, pending, approved, subscription, usage] = await Promise.all([
+  const [total, pending, approved, rejected, approvedMonth, subscription, usage] = await Promise.all([
     supabase.from("bookings").select("id", { count: "exact", head: true }),
     supabase.from("bookings").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    supabase.from("bookings").select("id", { count: "exact", head: true }).eq("status", "approved"),
+    supabase.from("bookings").select("id", { count: "exact", head: true }).eq("status", "rejected"),
     supabase.from("bookings").select("id", { count: "exact", head: true }).eq("status", "approved").gte("updated_at", monthStart),
     supabase.from("subscriptions").select("plan, status").maybeSingle(),
     supabase.from("monthly_usage").select("booking_count").eq("month", month).maybeSingle(),
   ]);
-  const failed = [total, pending, approved, subscription, usage].find((r) => r.error);
+  const failed = [total, pending, approved, rejected, approvedMonth, subscription, usage].find((r) => r.error);
   if (failed?.error) {
     console.error("getOverviewStats failed", { code: failed.error.code });
     throw new Error("Could not load the overview numbers.");
@@ -247,7 +252,9 @@ export async function getOverviewStats(now = new Date()): Promise<OverviewStats>
   return {
     total: total.count ?? 0,
     pending: pending.count ?? 0,
-    approvedThisMonth: approved.count ?? 0,
+    approved: approved.count ?? 0,
+    rejected: rejected.count ?? 0,
+    approvedThisMonth: approvedMonth.count ?? 0,
     plan,
     usedThisMonth: usage.data?.booking_count ?? 0,
     maxPerMonth: limits.data?.max_monthly_bookings ?? PLAN_LIMITS[plan].maxMonthlyBookings,

@@ -29,7 +29,7 @@ export function DashboardHeader() {
         </div>
       </div>
       <div className="flex items-center gap-1 sm:gap-2">
-        <Suspense fallback={<NotificationBadge count={0} />}>
+        <Suspense fallback={<div className="size-10 md:size-8" aria-hidden="true" />}>
           <HeaderBadge />
         </Suspense>
         <ThemeToggle />

@@ -62,6 +62,28 @@ async function BookingStatCards() {
     <>
       <StatCard label="Total booking requests" value={stats.total} note="in every status" testId="overview-total-bookings" />
       <StatCard label="Waiting for a decision" value={stats.pending} note="pending requests" testId="overview-pending" />
+      <Card>
+        <CardHeader className="gap-1">
+          <CardDescription>Requests by status</CardDescription>
+          <CardTitle className="sr-only">Pending, approved and rejected</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <dl className="grid grid-cols-3 gap-2 text-sm">
+            <div>
+              <dt className="text-muted-foreground">Pending</dt>
+              <dd className="text-2xl font-semibold" data-testid="overview-status-pending">{stats.pending}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Approved</dt>
+              <dd className="text-2xl font-semibold" data-testid="overview-status-approved">{stats.approved}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Rejected</dt>
+              <dd className="text-2xl font-semibold" data-testid="overview-status-rejected">{stats.rejected}</dd>
+            </div>
+          </dl>
+        </CardContent>
+      </Card>
       <StatCard label="Approved this month" value={stats.approvedThisMonth} note="approved since the 1st (UTC)" testId="overview-approved-month" />
       <Card className="sm:col-span-2 lg:col-span-1">
         <CardHeader className="gap-1">

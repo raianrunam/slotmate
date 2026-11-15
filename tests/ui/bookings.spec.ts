@@ -705,6 +705,61 @@ test.describe("approve, reject, cancel, delete", () => {
     }
   });
 
+  test("the SAME action in a stale second tab (approve twice, cancel twice) is refused too: a repeated action cannot pass as a no-op", async ({ browser, baseURL }) => {
+    // Rejecting after approving is also stopped by the database trigger; approving twice or cancelling twice is
+    // NOT (setting a status to itself is allowed), so only the "where status is still ..." guard of the action stops it.
+    const owner = await proOwner();
+    const fx = await makeWorkspace(owner);
+    const context = await browser.newContext({ baseURL });
+    try {
+      const id = await book(fx.resourceId, iso(day(3), 9), { name: `Twice ${tag()}` });
+      const first = await context.newPage();
+      await logIn(first, owner);
+      const second = await context.newPage();
+      await first.goto(`/dashboard/bookings/${id}`);
+      await second.goto(`/dashboard/bookings/${id}`);
+      await first.getByRole("button", { name: "Approve", exact: true }).click();
+      await expect(first.getByTestId("booking-notice")).toHaveText("Booking approved.");
+      await second.getByRole("button", { name: "Approve", exact: true }).click();
+      await expect(second.getByTestId("booking-action-error")).toHaveText("This booking was already changed. Reload the page to see its status.");
+
+      // The same for cancel: both tabs show an approved booking, the first cancels, the second is stale.
+      await first.goto(`/dashboard/bookings/${id}`);
+      await second.goto(`/dashboard/bookings/${id}`);
+      await first.getByRole("button", { name: "Cancel booking" }).click();
+      await first.getByRole("alertdialog").getByRole("button", { name: "Cancel booking" }).click();
+      await expect(first.getByTestId("booking-notice")).toHaveText("Booking cancelled. The time is free again.");
+      await second.getByRole("button", { name: "Cancel booking" }).click();
+      await second.getByRole("alertdialog").getByRole("button", { name: "Cancel booking" }).click();
+      await expect(second.getByTestId("booking-action-error")).toHaveText("This booking was already changed. Reload the page to see its status.");
+      expect(await statusInDb(owner, id)).toBe("cancelled");
+    } finally {
+      await context.close();
+      await fx.cleanup();
+    }
+  });
+
+  test("the message always answers the LAST click: an old refusal does not hide a newer one", async ({ browser, baseURL }) => {
+    const owner = await proOwner();
+    const fx = await makeWorkspace(owner);
+    const context = await browser.newContext({ baseURL });
+    try {
+      const id = await book(fx.resourceId, iso(day(3), 9), { name: `Last click ${tag()}` });
+      const tab = await context.newPage();
+      await logIn(tab, owner);
+      await tab.goto(`/dashboard/bookings/${id}`);
+      await setStatus(owner, id, "approved"); // the page is now stale: it still offers Approve and Reject
+      await tab.getByRole("button", { name: "Approve", exact: true }).click();
+      await expect(tab.getByTestId("booking-action-error")).toContainText("already changed");
+      expect((await owner.client.from("bookings").delete().eq("id", id).select("id")).error).toBeNull(); // now it does not exist at all
+      await tab.getByRole("button", { name: "Reject", exact: true }).click();
+      await expect(tab.getByTestId("booking-action-error")).toHaveText("That booking could not be found. It may have been deleted.");
+    } finally {
+      await context.close();
+      await fx.cleanup();
+    }
+  });
+
   test("a booking deleted in another tab gives 'could not be found', not a crash", async ({ browser, baseURL }) => {
     const owner = await proOwner();
     const fx = await makeWorkspace(owner);
@@ -901,6 +956,10 @@ test.describe("notifications and the overview", () => {
       await expect(page.getByTestId("overview-total-bookings")).toHaveText("7");
       await expect(page.getByTestId("overview-pending")).toHaveText("4");
       await expect(page.getByTestId("overview-approved-month")).toHaveText("2");
+      // DASH-04: separate counts of pending, approved and rejected.
+      await expect(page.getByTestId("overview-status-pending")).toHaveText("4");
+      await expect(page.getByTestId("overview-status-approved")).toHaveText("2");
+      await expect(page.getByTestId("overview-status-rejected")).toHaveText("1");
       await expect(page.getByTestId("overview-usage")).toHaveText("7 of 1,000");
       await expect(page.getByTestId("overview-limit-prompt")).toHaveCount(0);
 

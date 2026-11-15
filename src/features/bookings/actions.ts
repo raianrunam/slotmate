@@ -32,11 +32,12 @@ function fail(reason: ActionFailure): BookingActionState {
 // After a write that changed no row: find out why, with the owner's own session.
 async function whyNoChange(id: string, expectedFrom: string | null): Promise<ActionFailure> {
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("bookings")
     .select("status, resources!inner(is_locked, workspaces!inner(is_locked))")
     .eq("id", id)
     .maybeSingle();
+  if (error) return "generic"; // a failed read is not "not found"
   if (!data) return explainNoChange(null, expectedFrom);
   const resource = Array.isArray(data.resources) ? data.resources[0] : data.resources;
   const workspace = Array.isArray(resource.workspaces) ? resource.workspaces[0] : resource.workspaces;

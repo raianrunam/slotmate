@@ -22,7 +22,13 @@ test.describe("list parameters (BOOK-01, BOOK-07, BOOK-08)", () => {
     expect(parseListParams({ page: "0" }).page).toBe(1);
     expect(parseListParams({ page: "-4" }).page).toBe(1);
     expect(parseListParams({ page: "2.9" }).page).toBe(2);
-    expect(parseListParams({ page: "99999999999999999999" }).page).toBeLessThanOrEqual(1_000_000);
+    expect(parseListParams({ page: "99999999999999999999" }).page).toBe(1_000_000);
+  });
+
+  test("control characters (NUL, newline, tab) in the search become spaces, so they cannot reach the database", () => {
+    expect(parseListParams({ q: "a\u0000b" }).q).toBe("a b");
+    expect(parseListParams({ q: "a\nb\tc\u007fd" }).q).toBe("a b c d");
+    expect(parseListParams({ q: "\u0000\u0001" }).q).toBe("");
   });
 
   test("every status is accepted; the search is trimmed, squeezed and cut to the maximum", () => {

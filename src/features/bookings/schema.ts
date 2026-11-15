@@ -30,7 +30,7 @@ export interface ListParams {
 /** Reads ?status=&q=&page= from the address. Anything unknown becomes the default; nothing throws. */
 export function parseListParams(raw: { status?: SearchParamValue; q?: SearchParamValue; page?: SearchParamValue }): ListParams {
   const status = first(raw.status);
-  const q = (first(raw.q) ?? "").replace(/\s+/g, " ").trim().slice(0, SEARCH_MAX).trim();
+  const q = (first(raw.q) ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, SEARCH_MAX).trim();
   const page = Number.parseInt(first(raw.page) ?? "1", 10);
   return {
     status: (STATUS_FILTERS as readonly string[]).includes(status ?? "") ? (status as StatusFilter) : "all",
