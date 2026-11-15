@@ -4,7 +4,7 @@ Last updated: 2026-11-15 · Phase 11 · Sources: `docs/DATABASE.md` section 10, 
 
 This document says how SlotMate is tested, how to run the tests, what has been proved so far and what has not. The test *design* (what each test must prove) is in `docs/DATABASE.md` section 10; this document tracks the status.
 
-**Status in one line:** 20 of the 21 designed tests are implemented in whole or in part (T1–T8 and T19 from Phases 4–5; T12, T16 part 1, T17 part 1 and T20 from Phase 8; T12 resources part, T17 part 2, T18 and T21 from Phase 9; T10 from Phase 10; T9, T11 and T14 from Phase 11), as 66 database test cases (all pass, none skipped), 238 unit checks and 193 UI checks, run against the development Supabase project on 2026-11-15. Both global teardowns also check that no test user and no test file is left (section 4). The rest are planned. Unit checks (`npm run test:unit`) and user-interface checks (`npm run test:ui`) also exist (sections 6, 6a and 6b).
+**Status in one line:** 21 of the 21 designed tests are implemented in whole or in part (T1–T8 and T19 from Phases 4–5; T12, T16 part 1, T17 part 1 and T20 from Phase 8; T12 resources part, T17 part 2, T18 and T21 from Phase 9; T10 from Phase 10; T9, T11 and T14 from Phase 11; T13 and T17 part 3 from Phase 12), as 89 database test cases (all pass, none skipped), 256 unit checks and 217 UI checks, run against the development Supabase project on 2026-11-15. Both global teardowns also check that no test user and no test file is left (section 4). The rest are planned. Unit checks (`npm run test:unit`) and user-interface checks (`npm run test:ui`) also exist (sections 6, 6a and 6b).
 
 ---
 
@@ -84,10 +84,11 @@ T1 to T21 are defined in `docs/DATABASE.md` section 10. Status as of 2026-11-14:
 
 **Planned.** The phase in brackets is a proposal for when each test will be written (alongside the feature it checks); change it if the order of phases changes. Every test is re-run in Phase 17.
 
-- **T13 — Status changes** (Phase 12, booking management).
+- **T13 — Status changes** (`t13-status-transitions.spec.ts`, 21 tests; Phase 12). Bookings are made by our server (`submit_booking`), the owner changes them as a really logged-in owner. All 16 pairs of the four statuses: the three allowed changes (`pending > approved`, `pending > rejected`, `approved > cancelled`) work; every other real change (for example `approved > pending`, `rejected > approved`, `cancelled > approved`, `pending > cancelled`) is refused with `invalid_status_change` and the booking keeps its status; setting a status to itself is not a change and the trigger lets it pass (a harmless no-op, flagged in migration 4). The owner cannot change any other column (14 attempts, each `42501`, including an allowed status together with a forbidden column, and nothing moves); another owner changes and deletes nothing; the server key cannot change a status (no privilege) and the public key cannot either; two simultaneous changes from `pending` end with exactly one winner; a rejected or cancelled booking frees its time and a pending one holds it (D10).
 - **T15 — Webhook memory** (Phase 15, Stripe billing).
 - **T16 part 2 — Downgrade lock and selection** for resources and `apply_downgrade_selection` (Phase 15). Part 1 is done (above).
-- **T17 part 2, the account and Storage-image cases** (account delete). The workspace and resource cascades are done (above and in Phase 9).
+- **T17 part 3 — Deleting bookings keeps the monthly count** (`t17c-booking-delete-usage.spec.ts`, 2 tests; Phase 12). The owner deletes one booking and then the rest: `monthly_usage` stays the same (D13, D19, BILL-07); another owner's delete removes nothing; a deleted booking frees its time and a new request for it counts again.
+- **T17 part 4, the account and Storage-image cases** (account delete). The workspace and resource cascades are done (above and in Phase 9).
 
 ## 4. Test data and cleanup rules
 
@@ -181,6 +182,19 @@ When features are built (Phase 7 onwards), their tests check the layout at three
 
 The public booking page and the widget must work fully at 375 px. Those tests live in `tests/ui/` next to `tests/db/`. They need the Chromium download; the database tests deliberately do not.
 
+### 6e. Booking management tests (Phase 12)
+
+`tests/ui/bookings.spec.ts` (26 tests) and `tests/unit/bookings.spec.ts` (18 checks). Owners are really logged in (their own session cookie, RLS applies); visitors' bookings are made by our server key calling `submit_booking`, exactly as the public page does; the public page itself is used where a visitor's view matters (a cancelled time is bookable again). Every test builds its own workspace under a shared Pro owner and deletes it. Free-owner and exact-count tests use their own owners.
+
+- **List:** name, resource, workspace, date and time in the workspace's **named** zone (New York, London), attendees, status; newest first; only the owner's bookings; the empty message for a new owner; the phone layout (375) moves resource and time under the name, nothing overflows, every control has a name; 45 bookings make pages of 20, 20 and 5 with no booking on two pages, a page past the end shows the last page, nonsense pages show page 1.
+- **Filter and search:** the status buttons are toggle buttons (`aria-pressed`) and each shows only its status; status, search and page live in the address and the search is kept when the status changes; search by name, email and resource name, ignoring case; no match and clearing the search; `%` and `_` typed literally (a `100%` search does not match `100x`, an `r_s` search does not match `rXs`); commas, quotes, brackets, a backslash and dots are ordinary text; a filter-injection attempt matches nothing and breaks nothing; a 5,000-character search is cut to 100 and repeated parameters do not break the page.
+- **Details:** every field, the times in the named zone, the history text, "Not given" and "No note" for empty fields; another owner's booking, an unknown id and a malformed id all show "Page not found".
+- **Actions:** approve (success message, badge down, buttons change); reject (the time is free again for visitors); cancel asks first (Keep it and Escape change nothing), cancelling frees the time and the same time is booked again through the public page; delete asks first (Cancel and Escape keep it), shows a message, removes the booking and does not give back the month's count; delete in every status; **two tabs**, approve in one and reject in the other: the second gets "This booking was already changed. Reload the page to see its status." and the first change stays; two clicks at the same moment: exactly one change; a booking deleted in another tab gives "could not be found".
+- **Another owner's booking through the actions:** the page is tampered with just before it is sent (a foreign or malformed booking id); approve, reject, cancel and delete change and delete nothing and the owner sees the friendly message.
+- **Locked items (Q9):** after a downgrade the booking page shows an explanation and no buttons; a click on a page opened before the downgrade is refused with the same explanation; the database refuses a delete of a booking in a locked item.
+- **Notifications and overview:** the badge counts only the owner's pending requests, goes up with a new request and down with every approval, rejection and delete, and the bell leads to the pending filter; the overview shows real numbers (total, pending, approved this month, "X of 1,000"), "Recent activity" with 5 of 7 newest requests, the pending list oldest first, zeros and friendly empty lists for a new owner; a Free owner at 80 of 100 sees the upgrade prompt and deleting every request does not lower the count.
+- **Unit checks:** list parameters (junk never throws), address building, `%`/`_`/backslash escaping and the filter-value quoting, booking ids, the three transitions equal the database trigger, the error mapping (exact names only), the explanation of an update that changed nothing, the words for times (zone, next-day zones), and source guards (the owner check comes first, no admin client, no raw database text, confirmation dialogs, GET forms).
+
 ### 6d. Public booking tests (Phase 11)
 
 `tests/ui/booking.spec.ts` (13 tests) and `tests/unit/public-booking.spec.ts`. Visitors are browsers with no login, each with its own made-up `x-forwarded-for` address; owners are real API sessions; every test builds its own workspace under a shared Pro owner and deletes it, so the rate limit (5 per 10 minutes per visitor per workspace) never crosses between tests.
@@ -202,6 +216,7 @@ The public booking page and the widget must work fully at 375 px. Those tests li
 
 - **2026-11-15 (Phase 7)** — Added section 6a: unit tests (`npm run test:unit`), authentication UI tests, the client-bundle check, and the rule that the UI tests now need `.env.local`.
 - **2026-11-15 (migration 8)** — T14 burst test turned on (20 parallel, exactly 5 allowed); T21 uses the `<resource_id>/<file>` layout and refuses the old one; the teardowns find test files through a ledger of test resource ids (files no longer sit under owner ids); the public-page privacy test now has an image and asserts the owner id is absent.
+- **2026-11-15 (Phase 12)** — Added T13, T17 part 3 and section 6e (booking management). Two placeholder tests of the old sample booking list were removed from `interactions.spec.ts`; the real list is tested in `bookings.spec.ts`.
 - **2026-11-15 (Phase 11)** — Added T9, T11 and T14, raised T8 to 10 concurrent requests, added section 6d (public booking tests).
 - **2026-11-14** — Created (Phase 5). Documents the database tests T1–T8 and T19, which were written and run on this date.
 - **2026-11-14 (Phase 6)** — Added the user-interface tests (`npm run test:ui`, 88 checks) and the Node 22 requirement.

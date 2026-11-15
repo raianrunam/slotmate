@@ -170,6 +170,16 @@ Migrations 3–7 were written as files in one batch, then reviewed by **separate
 - **Migration 8 (2026-11-15, `rate_limit_lock_and_image_path`; written after owner authorization, reviewed by an independent read-only subagent, dry run, pushed, read-only check saved in `m8-results.txt`):** `check_rate_limit` takes a per-visitor advisory lock first and deletes old rows in bounded batches (`skip locked`, review finding L1, no deadlock); `set_resource_image` accepts only `<resource_id>/<one plain file name>` (allow-list, review finding L2), so the owner id is out of public image addresses. Decision R4 changed with the owner's confirmation. App, tests and docs moved to the new layout; the T14 burst test is on (20 parallel, exactly 5 allowed); the privacy test now has an image and asserts the owner id is absent. A one-time check of the dev project found no old-layout image (0 resources and 0 files to clean).
 - **Checks (2026-11-15, after migration 8):** build clean; 238 unit, 193 UI and 66 database tests pass (none skipped); both teardowns confirmed no test user and no test file remained.
 
+## Phase 12 — Booking management (2026-11-15)
+
+- **Built** (`src/features/bookings/`, `/dashboard/bookings`, `/dashboard/bookings/[id]`): the list (20 per page, newest first, times in the workspace's named zone), status toggle buttons and search as plain GET forms (the address keeps status, search and page), the details page with a status history, the actions approve, reject, cancel and delete (cancel and delete ask first), the pending-request badge on the header bell and the Bookings menu item, and a real overview (totals, pending, approved, rejected, approved this month, "X of N requests this month" with an upgrade prompt from 80%, five recent items, pending requests). Everything uses the owner's own session (RLS); no secret key.
+- **Decisions made while building:** (1) a status action is `update ... where id = ? and status = <starting status>`, so a repeated or concurrent action finds no row; (2) an update or delete that changed no row is explained by re-reading the booking (not found, locked, already changed); (3) the search looks up matching resource ids first and joins them into one `or()` filter, with `%`, `_` and `\` escaped and the value quoted; (4) "approved this month" uses `updated_at` (an approved booking only changes again when cancelled); (5) one action state serves all four buttons so a message always answers the last click.
+- **Found while testing (T13):** the trigger lets a status be set to itself (documented in migration 4 as "not a change"), so `approved > approved` does not raise `invalid_status_change`. The design text in `DATABASE.md` 10 said every other pair is refused; the test now records the no-op. This is exactly why the action carries the `status = from` guard. Also, my first "columns unchanged" check read through the server key, which may not read every column (Q3), so it compared nothing with nothing; it now reads as the owner.
+- **Independent review** (`phase12-review.txt`): 0 critical, 0 high, 4 medium, 9 low. Fixed: (M1) the overview lacked the rejected count and an all-time approved count (DASH-04), now shown in a "Requests by status" card; (M2) four separate form states let an old refusal hide a newer one, now one state; (M3) control characters in `q` (a NUL could make the query fail) become spaces; (M4) the race tests could not detect a missing status guard because the trigger also stops approve-then-reject, so two tests were added (approve twice, cancel twice, from a stale tab) and the guard was removed once to see them fail. Also: a failed read in "why nothing changed" is now generic, not "not found"; the page-clamp unit check asserts the exact value.
+- **Not fixed (low, listed under Open items):** `*` acts as a wildcard in the search (PostgREST turns it into `%`); the list count and the rows are two queries; focus returns to the top after a filter click (full-page GET); action buttons are 40 px high on a phone (below 44 px); `?notice=` shows again on reload; `getOverviewStats` runs the plan-limit read after the first group.
+- **Tests removed:** two old placeholder tests of the sample booking list in `interactions.spec.ts` (the real list is tested on real data).
+- **Checks (2026-11-15):** `npx tsc --noEmit`, `npx eslint` and `npm run build` clean; 256 unit, 26 + the existing UI tests and 89 database tests pass (full numbers in `TESTING.md`).
+
 ## Agent mistakes and how they were caught
 
 Honest record of things the agents got wrong. Mistakes 1–9 happened in Phases 1–4a; 10–13 and 16 in Phase 4e (the migration reviews); 15 in Phase 4d; 14 and 17 in Phase 5.
@@ -217,6 +227,12 @@ Honest record of things the agents got wrong. Mistakes 1–9 happened in Phases 
 - **Saved evidence.** Raw outputs of checks and reviews are kept in a notes folder, not summarized from memory.
 
 ## Open items
+
+Booking management (Phase 12):
+
+- **Search wildcard:** a `*` typed in the search acts as `%` (PostgREST turns `*` into the LIKE wildcard even inside quotes). Harmless (owner's own data); a fix would use a different filter form.
+- **Small polish:** the list count and rows are two queries (a booking created between them can shift the "of N" by one); filter buttons are full-page GET submits (focus returns to the top); action buttons are 40 px high on a phone (the design target elsewhere is the same); `?notice=` shows again on a reload; "approved this month" is based on `updated_at`.
+- **Not tested through the browser by a person:** the 5-step manual list in the Phase 12 hand-over.
 
 Database and tests:
 
@@ -285,3 +301,4 @@ Authentication (Phase 7):
 - **2026-11-15** — Added the Phase 8 entry.
 - **2026-11-15** — Added the Phase 7 entry, mistakes 22–28, and the authentication open items.
 - **2026-11-15** — Added the Phase 11 entry.
+- **2026-11-15** — Added the Phase 12 entry.
