@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { serviceClient } from "../db/helpers";
 import { addDaysToDate, todayInZone } from "../../src/lib/time/slots";
 import { LOGGED_OUT } from "./owner";
-import { addResource, addWorkspace, cleanupOwners, forgeOnSubmit, logIn, newOwner, setPlan, tag, type TestOwner } from "./owners";
+import { addResource, addWorkspace, cleanupOwners, forgeOnSubmit, logIn, newOwner, setPlan, sharedPerFile, tag, type TestOwner } from "./owners";
 
 // Availability checks (Phase 10: AVAIL-01, AVAIL-02, AVAIL-03, D6, D7). Every test has
 // its own throw-away owner, logged in with a real session. Hours are saved through the
@@ -27,15 +27,13 @@ async function storedHours(resourceId: string) {
 // To stay under Supabase's sign-in rate limit, the tests that do not depend on the number of
 // workspaces or resources share ONE Pro owner per Playwright worker (made on first use); each
 // test still gets its OWN new resource, so tests cannot see each other's hours.
-let shared: Promise<{ owner: TestOwner; workspaceId: string }> | null = null;
 function sharedOwner() {
-  shared ??= (async () => {
+  return sharedPerFile("pro", async () => {
     const owner = await newOwner();
     await setPlan(owner.id, "pro");
     const workspaceId = await addWorkspace(owner, "Studio", `ws-${tag()}`, ZONE);
     return { owner, workspaceId };
-  })();
-  return shared;
+  });
 }
 
 async function setup(page: Page) {
@@ -225,17 +223,14 @@ test.describe("locked resources (after a downgrade)", () => {
   });
 });
 
-let victimOwner: Promise<{ other: TestOwner; ws: string }> | null = null;
-
 test.describe("another owner's resource (the server refuses)", () => {
   async function victim() {
     // A separate Pro owner per worker, made on first use.
-    victimOwner ??= (async () => {
+    const { other, ws } = await sharedPerFile("victim", async () => {
       const other: TestOwner = await newOwner();
       await setPlan(other.id, "pro");
       return { other, ws: await addWorkspace(other, "Victim ws", `ws-${tag()}`, ZONE) };
-    })();
-    const { other, ws } = await victimOwner;
+    });
     const id = await addResource(other, ws, "Victim room");
     await other.client.from("resource_availability").insert([{ resource_id: id, weekday: 1, opens_at: "09:00", closes_at: "17:00" }]);
     return { other, id };

@@ -21,6 +21,19 @@ export const tag = () => randomBytes(4).toString("hex");
 // created earlier in the same worker, must survive it).
 const created: { id: string; file: string }[] = [];
 
+// Owners a test FILE shares between its tests in one worker (made on first use, to stay under the sign-in rate limit).
+// The cache is emptied by cleanupOwners: a worker can run tests of other files in between, which runs this file's
+// afterAll and deletes the shared owner; a module-level cached owner would then be gone (owner_not_found) in the
+// next test of this file that the same worker picks up (Phase 17, flaky "badge counts" test).
+const shared = new Map<string, Map<string, Promise<unknown>>>();
+export function sharedPerFile<T>(key: string, make: () => Promise<T>): Promise<T> {
+  const file = test.info().file;
+  const forFile = shared.get(file) ?? new Map<string, Promise<unknown>>();
+  shared.set(file, forFile);
+  if (!forFile.has(key)) forFile.set(key, make());
+  return forFile.get(key) as Promise<T>;
+}
+
 export async function newOwner(): Promise<TestOwner> {
   const user = await createTestUser({ confirmed: true });
   created.push({ id: user.id, file: test.info().file });
@@ -91,6 +104,7 @@ export async function cleanupOwners(): Promise<void> {
   }
   for (const id of mine) await deleteTestUser(id); // also records and clears the owner's resource folders
   for (let i = created.length - 1; i >= 0; i--) if (created[i].file === file) created.splice(i, 1);
+  shared.delete(file); // the shared owners are gone; the next test of this file must make new ones
 }
 
 export async function addWorkspace(owner: TestOwner, name: string, slug = `ws-${tag()}`, timeZone = "UTC") {

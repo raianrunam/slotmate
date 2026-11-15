@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { serviceClient } from "../db/helpers";
+import { waitForHydration } from "./helpers";
 import { LOGGED_OUT } from "./owner";
 import {
   addResource,
@@ -50,6 +51,14 @@ async function giveImage(ownerId: string, resourceId: string): Promise<string> {
   expect((await service.storage.from("resource-images").upload(path, PNG_BYTES, { contentType: "image/png" })).error).toBeNull();
   expect((await service.rpc("set_resource_image", { p_owner_id: ownerId, p_resource_id: resourceId, p_path: path })).error).toBeNull();
   return path;
+}
+
+// Clicking before React has hydrated posts the form as a plain page load and the message never appears
+// (Phase 17: the flaky upload tests).
+async function uploadClick(page: Page) {
+  const button = page.getByRole("button", { name: "Upload image" });
+  await waitForHydration(button);
+  await button.click();
 }
 
 async function setup(page: Page, resources = 1) {
@@ -229,7 +238,7 @@ test.describe("image (RES-05, D9, S1)", () => {
     await expect(page.getByTestId("resource-image-placeholder")).toBeVisible();
 
     await page.getByLabel("Upload an image").setInputFiles(png());
-    await page.getByRole("button", { name: "Upload image" }).click();
+    await uploadClick(page);
     await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
     const image = page.getByTestId("resource-image");
     await expect(image).toBeVisible();
@@ -267,7 +276,7 @@ test.describe("image (RES-05, D9, S1)", () => {
     await page.goto(`/dashboard/resources/${ids[0]}`);
     const big = Buffer.concat([PNG_BYTES, Buffer.alloc(2 * 1024 * 1024)]); // 2 MB + 70 bytes
     await page.getByLabel("Upload an image").setInputFiles(png(big, "big.png"));
-    await page.getByRole("button", { name: "Upload image" }).click();
+    await uploadClick(page);
     await expect(page.getByTestId("image-message")).toContainText("larger than 2 MB");
     expect((await storedResources(owner.id))[0].image_path).toBeNull();
     expect(await listOwnerFiles(owner.id)).toEqual([]);
@@ -281,7 +290,7 @@ test.describe("image (RES-05, D9, S1)", () => {
       mimeType: "image/png", // the browser's claim is fake too
       buffer: Buffer.from("This is just some text, not a picture."),
     });
-    await page.getByRole("button", { name: "Upload image" }).click();
+    await uploadClick(page);
     await expect(page.getByTestId("image-message")).toContainText("not a JPG, PNG or WebP image");
     expect((await storedResources(owner.id))[0].image_path).toBeNull();
     expect(await listOwnerFiles(owner.id)).toEqual([]);
@@ -295,7 +304,7 @@ test.describe("image (RES-05, D9, S1)", () => {
       ["y.png", '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'],
     ] as const) {
       await page.getByLabel("Upload an image").setInputFiles({ name, mimeType: "image/png", buffer: Buffer.from(text) });
-      await page.getByRole("button", { name: "Upload image" }).click();
+      await uploadClick(page);
       await expect(page.getByTestId("image-message")).toContainText("not a JPG, PNG or WebP image");
     }
     expect(await listOwnerFiles(owner.id)).toEqual([]);
@@ -304,7 +313,7 @@ test.describe("image (RES-05, D9, S1)", () => {
   test("submitting with no file asks for one", async ({ page }) => {
     const { ids } = await setup(page);
     await page.goto(`/dashboard/resources/${ids[0]}`);
-    await page.getByRole("button", { name: "Upload image" }).click();
+    await uploadClick(page);
     await expect(page.getByTestId("image-message")).toContainText("Choose an image file");
   });
 
@@ -313,7 +322,7 @@ test.describe("image (RES-05, D9, S1)", () => {
     for (const id of ids) {
       await page.goto(`/dashboard/resources/${id}`);
       await page.getByLabel("Upload an image").setInputFiles(png());
-      await page.getByRole("button", { name: "Upload image" }).click();
+      await uploadClick(page);
       await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
     }
     expect(await listOwnerFiles(owner.id), "two files stored").toHaveLength(2);
@@ -349,7 +358,7 @@ test.describe("locked resources (after a downgrade)", () => {
     // An image while it is still editable.
     await page.goto(`/dashboard/resources/${r1}`);
     await page.getByLabel("Upload an image").setInputFiles(png());
-    await page.getByRole("button", { name: "Upload image" }).click();
+    await uploadClick(page);
     await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
     const before = (await storedResources(owner.id)).find((r) => r.id === r1)!.image_path;
 
@@ -388,7 +397,7 @@ test.describe("locked resources (after a downgrade)", () => {
     await page.getByLabel("Upload an image").setInputFiles(png());
 
     await setPlan(owner.id, "free"); // locks while the form is open
-    await page.getByRole("button", { name: "Upload image" }).click();
+    await uploadClick(page);
     await expect(page.getByTestId("image-message")).toContainText("locked");
     expect(await listOwnerFiles(owner.id), "no file was stored").toEqual([]);
     expect((await storedResources(owner.id)).find((r) => r.id === r1)!.image_path).toBeNull();
@@ -471,14 +480,14 @@ test.describe("another owner's resource and forged fields (the server refuses)",
     // Upload with a tampered id.
     await page.getByLabel("Upload an image").setInputFiles(png());
     await forgeOnSubmit(page, "form:has(input[name=image])", { id: foreignId });
-    await page.getByRole("button", { name: "Upload image" }).click();
+    await uploadClick(page);
     await expect(page.getByTestId("image-message")).toContainText("cannot make this change");
     expect(await listOwnerFiles(owner.id), "nothing stored for the attacker").toEqual([]);
 
     // Give the attacker an image of their own so a Remove button exists, then tamper that form.
     await page.reload();
     await page.getByLabel("Upload an image").setInputFiles(png());
-    await page.getByRole("button", { name: "Upload image" }).click();
+    await uploadClick(page);
     await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
     await forgeOnSubmit(page, "form:has(input[name=intent])", { id: foreignId });
     await page.getByRole("button", { name: "Remove image" }).click();
@@ -530,7 +539,7 @@ test.describe("image upload edge cases (Phase 9 review carry-overs)", () => {
     await page.goto(`/dashboard/resources/${ids[0]}`);
     await page.getByLabel("Upload an image").setInputFiles(png()); // small: the browser guard passes
     await sendBigFileInstead(page, 2_150_000); // over 2 MB, under the 2200 kB request limit
-    await page.getByRole("button", { name: "Upload image" }).click();
+    await uploadClick(page);
     await expect(page.getByTestId("image-message")).toContainText("larger than 2 MB");
     expect((await storedResources(owner.id))[0].image_path).toBeNull();
     expect(await listOwnerFiles(owner.id), "the bucket is empty").toEqual([]);
@@ -541,7 +550,7 @@ test.describe("image upload edge cases (Phase 9 review carry-overs)", () => {
     await page.goto(`/dashboard/resources/${ids[0]}`);
     await page.getByLabel("Upload an image").setInputFiles(png());
     await sendBigFileInstead(page, 3_500_000);
-    await page.getByRole("button", { name: "Upload image" }).click();
+    await uploadClick(page);
     await expect(page.getByTestId("image-message")).toContainText("could not be completed");
     await expect(page.getByRole("heading", { level: 1, name: "Room 1" }), "no error page").toBeVisible();
     expect(await listOwnerFiles(owner.id), "nothing stored").toEqual([]);
@@ -549,7 +558,7 @@ test.describe("image upload edge cases (Phase 9 review carry-overs)", () => {
     // The page still works after the failure: a normal upload succeeds.
     await page.reload();
     await page.getByLabel("Upload an image").setInputFiles(png());
-    await page.getByRole("button", { name: "Upload image" }).click();
+    await uploadClick(page);
     await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
   });
 
@@ -570,7 +579,7 @@ test.describe("image upload edge cases (Phase 9 review carry-overs)", () => {
       expect(bytes.length, `the browser made a ${ext}`).toBeGreaterThan(20);
 
       await page.getByLabel("Upload an image").setInputFiles({ name: `photo.${ext}`, mimeType: mime, buffer: Buffer.from(bytes) });
-      await page.getByRole("button", { name: "Upload image" }).click();
+      await uploadClick(page);
       await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
       const [stored] = await storedResources(owner.id);
       expect(stored.image_path).toMatch(new RegExp(`\.${ext}$`));
@@ -590,7 +599,7 @@ test.describe("image upload edge cases (Phase 9 review carry-overs)", () => {
     expect((await serviceClient().storage.from("resource-images").upload(stray, PNG_BYTES, { contentType: "image/png" })).error).toBeNull();
     await page.goto(`/dashboard/resources/${ids[0]}`);
     await page.getByLabel("Upload an image").setInputFiles(png());
-    await page.getByRole("button", { name: "Upload image" }).click();
+    await uploadClick(page);
     await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
     const [first] = await storedResources(owner.id);
     expect((await listResourceFiles(ids[0])).sort(), "the young stray is still there").toEqual([first.image_path, stray].sort());

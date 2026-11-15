@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { serviceClient } from "../db/helpers";
 import { addDaysToDate, todayInZone } from "../../src/lib/time/slots";
 import { LOGGED_OUT } from "./owner";
-import { cleanupOwners, newOwner, PNG_BYTES, setPlan, tag, type TestOwner } from "./owners";
+import { cleanupOwners, newOwner, PNG_BYTES, setPlan, sharedPerFile, tag, type TestOwner } from "./owners";
 
 // Public booking (Phase 11: PUB-01 to PUB-07, NOTIF-01, NOTIF-03, SEC-06, D19, D21, D22).
 // Real paths only: a visitor is a browser with NO login; owners are real logged-in API
@@ -18,14 +18,12 @@ test.afterAll(cleanupOwners);
 
 const service = serviceClient();
 
-let shared: Promise<TestOwner> | null = null;
 function sharedOwner(): Promise<TestOwner> {
-  shared ??= (async () => {
+  return sharedPerFile("pro", async () => {
     const owner = await newOwner();
     await setPlan(owner.id, "pro");
     return owner;
-  })();
-  return shared;
+  });
 }
 
 // ---------------------------------------------------------------------------

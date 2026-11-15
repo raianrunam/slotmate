@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { SCREENSHOT_DIR } from "./helpers";
+import { SCREENSHOT_DIR, waitForHydration } from "./helpers";
 import { OWNER_STATE } from "./owner";
 
 // Keyboard and interaction checks for the shared pieces: skip link, theme
@@ -189,6 +189,7 @@ test.describe("shared components (logged in)", () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/dashboard");
     const button = page.getByRole("button", { name: "Account menu" });
+    await waitForHydration(button); // before hydration the Enter key does nothing (Phase 17, flaky test)
     await button.focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("menu")).toBeVisible();

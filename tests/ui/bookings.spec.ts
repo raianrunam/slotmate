@@ -4,7 +4,7 @@ import { serviceClient } from "../db/helpers";
 import { clockIn } from "../../src/lib/time/format";
 import { addDaysToDate, todayInZone } from "../../src/lib/time/slots";
 import { LOGGED_OUT } from "./owner";
-import { addResource, addWorkspace, cleanupOwners, forgeOnSubmit, logIn, newOwner, setPlan, tag, type TestOwner } from "./owners";
+import { addResource, addWorkspace, cleanupOwners, forgeOnSubmit, logIn, newOwner, setPlan, sharedPerFile, tag, type TestOwner } from "./owners";
 
 // Booking management (Phase 12: BOOK-01 to BOOK-08, NOTIF-02, DASH-03/04/06, D10, D13, D15, D19, D21, D25, Q9).
 // Real paths only: owners are really logged in (the app's own login cookie, RLS applies); visitors' bookings
@@ -19,23 +19,19 @@ test.afterAll(cleanupOwners);
 const service = serviceClient();
 
 // One Pro owner per worker (many bookings, and the monthly count only ever grows, D19), and a second owner.
-let ownerPromise: Promise<TestOwner> | null = null;
 function proOwner(): Promise<TestOwner> {
-  ownerPromise ??= (async () => {
+  return sharedPerFile("pro", async () => {
     const owner = await newOwner();
     await setPlan(owner.id, "pro");
     return owner;
-  })();
-  return ownerPromise;
+  });
 }
-let secondPromise: Promise<TestOwner> | null = null;
 function secondOwner(): Promise<TestOwner> {
-  secondPromise ??= (async () => {
+  return sharedPerFile("second", async () => {
     const owner = await newOwner();
     await setPlan(owner.id, "pro");
     return owner;
-  })();
-  return secondPromise;
+  });
 }
 
 const day = (n: number, zone = "UTC") => addDaysToDate(todayInZone(zone), n);
