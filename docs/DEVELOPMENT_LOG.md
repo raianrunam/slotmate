@@ -149,6 +149,16 @@ Migrations 3–7 were written as files in one batch, then reviewed by **separate
 - **Independent review** (fresh read-only reviewer, `phase9-review.txt`): 0 high, 2 medium, 13 low. Fixed: tests that could not detect a Storage delete in someone else's folder; a "forged fields" test that only swapped the id; a folder-clearing loop that could report success while files remained; a failed read shown as "not found"; a generic image description. Noted honestly: the 2 MB UI test proves the browser guard (the server check is proved by unit tests). Accepted: a concurrent replace or an upload during a delete can leave an orphan file, a failed old-file removal is only logged, the file signature check is shallow (it does not decode the image), the 3 MB limit applies to every Server Action, and the "See all resources" link on a workspace page is not filtered.
 - **Checks (2026-11-15):** `npx tsc --noEmit`, `npx eslint` and `npm run build` clean; unit, UI and 38 database tests pass.
 
+## Phase 10 — Availability (2026-11-15)
+
+- **Packages:** `date-fns` and `@date-fns/tz` installed (approved, L4). The code uses `tzOffset` from `@date-fns/tz`; `date-fns` itself ended up unused because its `addDays` depends on the host's time zone (review finding 1), so calendar dates use plain UTC arithmetic. The unused dependency is an open item (removal needs approval).
+- **Carry-overs from Phase 9:** the 2.15 MB request that skips the browser check reaches the server and gets the friendly "too large" message; a 3.5 MB request is stopped by Next.js (413) and the form shows a friendly message; the body limit is now 2200 kB (a ~2.5 MB file as in the brief would be stopped by that limit before our code runs, so 2.15 MB is used to reach the server check); stricter image signatures (JPEG marker byte, PNG IHDR, WebP size and chunk, minimum sizes) with a real JPEG and a real WebP made by the browser; folder sweeps after record, remove and delete; and a permanent no-leftovers check in both teardowns.
+- **Built:** `src/lib/time/slots.ts` (slots for a day and a range, `isBookableStart`), the weekly opening-hours editor with a 7-day preview, the page `/dashboard/resources/[id]/availability`, the overview `/dashboard/availability`, and links from the resource page and the menu. The hours are saved day by day (update, add, remove) because the API has no transaction.
+- **T10 and the order trick:** the database checks the slot before "past" and "too far", so the real 2026 clock-change days can be compared with the live database through the error name although no change falls in the next 90 days (none between mid-November and mid-February). `ends_at` on those days is compared with a read-only SQL copy of the function's end logic. Two deliberate mutations of the app code were caught by T10.
+- **Independent review** (`phase10-review.txt`): 0 high, 6 medium, 12 low. The reviewer compared `slots.ts` with `submit_booking` line by line and ran a brute-force check around every 2026 clock change in 13 zones: no disagreement. Fixed: `addDaysToDate` depended on the server's time zone (wrong on a New York host); the image sweep could delete a concurrent upload's file (files younger than a minute are left alone, the replaced image is deleted at once, the recorded path is re-read); the client error handler could swallow a redirect to the login page; the teardown's orphan clean-up could delete a real owner's files (it now only touches folders of test user ids recorded in the run and `t21-*`); T10 gained different hours per weekday, two extreme zones, instants near local midnight and the `ends_at` check; the final delete of closed days is checked. Justified or noted: sub-millisecond start moments and two clock changes within 24 hours do not occur in 2026 or 2027.
+- **Found while testing:** the full UI suite now hits Supabase's sign-in rate limit (about 190 sign-ins), so the availability tests share one Pro owner per worker.
+- **Checks (2026-11-15):** `npx tsc --noEmit`, `npx eslint` and `npm run build` clean; 209 unit, 189 UI and 53 database tests pass; both teardowns confirmed that no test user and no test file remained.
+
 ## Agent mistakes and how they were caught
 
 Honest record of things the agents got wrong. Mistakes 1–9 happened in Phases 1–4a; 10–13 and 16 in Phase 4e (the migration reviews); 15 in Phase 4d; 14 and 17 in Phase 5.
@@ -226,6 +236,15 @@ Interface (Phase 6):
 - **Embed shell:** it follows the viewer's light or dark setting; the owner's saved theme (EMBED-04) arrives in Phase 14. The iframe header rules for `/embed` are also Phase 14.
 - **Placeholders to replace:** the landing page copy is a draft (Phase 18); every dashboard and booking shell is replaced by its real feature phase.
 
+Availability (Phase 10):
+
+- **Unused `date-fns`:** installed with approval but not imported; remove it or use it (needs approval).
+- **Speed:** 90 days of 5-minute slots take about half a second; the public page (Phase 11) should compute one day at a time or cache clock-change offsets.
+- **Known limitation stays:** 45-minute slots on a clocks-forward day can give two overlapping grid slots (DATABASE.md 7.2.1). The preview shows both. A new migration (restrict `slot_minutes` or clamp the end) needs the owner's authorization.
+- **Opening hours are typed** as text (`09:00`, `24:00`); a time picker with an end-of-day option would be friendlier.
+- **Day-by-day saving:** a failure part-way leaves a mix of old and new days; the owner can save again. A database function would make it atomic (new migration).
+- **Rate limit:** the UI suite is near Supabase's sign-in limit; a shared logged-in session per test file would help.
+
 Resources and images (Phase 9):
 
 - **Leftover check not run:** confirm (read-only) that no `slotmate-test-` users and no test files remain in the `resource-images` bucket. The owner can run it, or authorize a small leftover-check test.
@@ -250,6 +269,7 @@ Authentication (Phase 7):
 ## Change history
 
 - **2026-11-14** — Created (Phase 5) with entries for Phases 1–5.
+- **2026-11-15** — Added the Phase 10 entry.
 - **2026-11-15** — Added the Phase 9 entry.
 - **2026-11-15** — Added the Phase 8 entry.
 - **2026-11-15** — Added the Phase 7 entry, mistakes 22–28, and the authentication open items.

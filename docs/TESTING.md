@@ -4,7 +4,7 @@ Last updated: 2026-11-15 · Phase 8 · Sources: `docs/DATABASE.md` section 10, `
 
 This document says how SlotMate is tested, how to run the tests, what has been proved so far and what has not. The test *design* (what each test must prove) is in `docs/DATABASE.md` section 10; this document tracks the status.
 
-**Status in one line:** 16 of the 21 designed tests are implemented in whole or in part (T1–T8 and T19 from Phases 4–5; T12, T16 part 1, T17 part 1 and T20 from Phase 8; T12 resources part, T17 part 2, T18 and T21 from Phase 9), as 38 Playwright test cases, and all 38 pass against the development Supabase project (run on 2026-11-15). The rest are planned. Unit checks (`npm run test:unit`) and user-interface checks (`npm run test:ui`) also exist (sections 6, 6a and 6b).
+**Status in one line:** 17 of the 21 designed tests are implemented in whole or in part (T1–T8 and T19 from Phases 4–5; T12, T16 part 1, T17 part 1 and T20 from Phase 8; T12 resources part, T17 part 2, T18 and T21 from Phase 9; T10 from Phase 10), as 53 Playwright test cases, and all 53 pass against the development Supabase project (run on 2026-11-15). Both global teardowns now also check that no test user and no test file is left (section 4). The rest are planned. Unit checks (`npm run test:unit`) and user-interface checks (`npm run test:ui`) also exist (sections 6, 6a and 6b).
 
 ---
 
@@ -75,11 +75,11 @@ T1 to T21 are defined in `docs/DATABASE.md` section 10. Status as of 2026-11-14:
 - **T17 part 2 — Resource delete cascade** (`t17b-resource-cascade.spec.ts`, 2 tests; Phase 9). The owner deletes one resource: its opening hours and bookings are gone (each checked to exist first), the workspace stays, the monthly usage stays (D19). Another owner's resource cannot be deleted. The removal of the Storage files is proved through the app in the UI tests (section 6c).
 - **T18 — Plans match the database** (`t18-plans-match.spec.ts`, 2 tests; Phase 9). `PLAN_LIMITS` in `src/lib/plans.ts` equals the `plan_limits` table for every plan and number, and the app's Pro rule `effectivePlan` gives the same answer as the database function `current_plan` for seven subscription states.
 - **T21 — Image path and bucket** (`t21-image-path.spec.ts`, 8 tests; Phase 9). `set_resource_image`: a good path is recorded and NULL removes it; a foreign owner and unknown ids are refused (`resource_not_found`); paths outside `<owner>/<resource>/`, with `..`, with no file name, or empty are refused (`invalid_path`); a locked resource refuses a new path and NULL (`resource_locked`) and keeps its image. The bucket: the server key can write and the file is publicly readable by address; `anon` cannot upload, replace, delete or list; a logged-in owner cannot upload or list; the bucket itself refuses text, SVG and files over 2 MiB even from the server key. The test files are removed at the end.
+- **T10 — The app's slot rules equal `submit_booking`** (`t10-slots-agree.spec.ts`, 15 tests; Phase 10). A Pro test owner has five workspaces (London, New York, Sydney, Pacific/Kiritimati +14, Pacific/Pago_Pago −11) and 20 resources (30, 45, 60 and 90 minute slots) with a different opening window on different weekdays. For every 15-minute start (plus misaligned ones) around the real 2026 clock changes, the app (`isBookableStart`) and the live database must give the same answer: accepted, `invalid_slot` (second copy of a repeated hour, a start in the skipped hour, misaligned, outside the hours, closed weekday), `past` or `too_far`. The database checks the slot before "past" and "too far", so a valid start on a past date answers `past`; that is how the real clock-change days are tested although none falls inside the next 90 days. On ordinary days (yesterday, 3, 90 and 91 days ahead, near local midnight, near closing time) accepted slots are really inserted and `ends_at` is compared, then deleted. Three more tests: clock changes inside the next 90 days (checked at run time; **there are none between mid-November and mid-February, so this test finds nothing to do today and passes without comparing**), PostgreSQL's resolution of a repeated and a skipped wall time (read-only SQL), and `ends_at` on every clock-change day for every slot length against a read-only SQL **copy** of step 5 of the function (a copy of the logic, not the function itself: if the function changes, the copy must change too). Where `ends_at` cannot be compared through a booking (past dates), these two tests are the evidence. Two deliberate mutations of the app code (using the second copy of a repeated hour; taking the weekday from the UTC date) were confirmed to make T10 fail. Known limits: 45-minute slots are not inserted on clocks-forward days (known limitation, DATABASE.md 7.2.1); start moments with sub-millisecond parts are not tested; the 90-day boundary can flake if the run crosses local midnight in Kiritimati (10:00 UTC).
 
 **Planned.** The phase in brackets is a proposal for when each test will be written (alongside the feature it checks); change it if the order of phases changes. Every test is re-run in Phase 17.
 
 - **T9 — Overlap rule through real paths** (Phase 11, public booking).
-- **T10 — Invalid slots refused by the function**, including the clock-change cases: both copies of the repeated hour, slots that end in it, the skipped hour, for several time zones (Phase 10, availability and the time library).
 - **T11 — Monthly limit** (Phase 11).
 - **T13 — Status changes** (Phase 12, booking management).
 - **T14 — Rate limit** (Phase 11).
@@ -96,6 +96,7 @@ T1 to T21 are defined in `docs/DATABASE.md` section 10. Status as of 2026-11-14:
 - Check afterwards (read-only): `select count(*) from auth.users` should be 0 in a development project that has no real accounts. On 2026-11-14 the count was 0 for `auth.users` and for every table the tests use.
 - No test prints, logs or snapshots an environment variable or key. Output contains test names and assertion messages only.
 - Booking times are always a future day (5 days ahead) in a workspace whose time zone is `UTC`, with opening hours 00:00–24:00 on all seven weekdays, so every whole hour is a valid slot.
+- **No leftovers (Phase 10).** Both global teardowns delete leftover test users together with their Storage files (deleting a user does not delete their files), delete the bucket folders of every test user id recorded during the run (kept in a small file in the temp folder) and the `t21-*` folders, and then **fail the run** if any test user or any such file remains. They never delete folders that belong to anybody else.
 - Playwright's scratch output goes to the system temp folder; `test-results/` and `playwright-report/` are also ignored by Git.
 
 ## 5. Known limits of the current tests
@@ -157,6 +158,16 @@ Status on 2026-11-15: 144 unit checks, 171 UI checks and 38 database tests pass.
 
 **Not covered:** the server's own 2 MB check through the browser (the browser form refuses first; the check is proved by the unit tests), a request over 3 MB (Next.js answers 413 before our code runs), a failing Storage service, concurrent replace or delete of the same image, JPEG and WebP uploads through the UI (the signature check is unit tested; the UI uses PNG), an unlocked resource inside a locked workspace, and screen-reader behaviour.
 
+### 6d. Availability tests (Phase 10)
+
+Status on 2026-11-15: 209 unit checks, 189 UI checks and 53 database tests pass.
+
+**Unit** (`tests/unit/slots.spec.ts`, 55 checks): clock text; calendar-date arithmetic independent of the host's time zone; slots for a normal day (09:00-12:00 gives 09:00, 10:00, 11:00; a leftover shorter than a slot is dropped; 30, 45, 60 and 90 minutes; closed weekdays; 00:00 and 24:00; bad windows); past (a slot that starts exactly now is not offered) and the 90-day limit counted in the workspace's zone (day 90 yes, day 91 no, Dhaka and London differ by a day near midnight); the clock-change days of Europe/London, America/New_York and Australia/Sydney (the skipped hour gives no slot, the repeated hour is offered once as its first copy, ends use the first copy, 23 and 24 hourly slots on short and long days); Asia/Dhaka with no changes; wall time to instants; and for 7 zones and dates times 4 slot lengths, every 5 minutes across 40 real hours, `isBookableStart` agrees with `slotsForDay` and with the reasons. `tests/unit/availability.spec.ts`: the weekly form rules (24:00 only as a closing time, closing later than opening, unreadable times, errors for every bad day at once) and source guards (the action calls `requireOwner()` first, the lock check comes before every write, no secret key, only the 21 allowed fields).
+
+**UI** (`tests/ui/availability.spec.ts`, 13 tests): saving hours through the form and reading the database rows; update and close days; all days closed; 24:00 and the preview up to midnight; closing at or before opening (message on the day, nothing saved); unreadable times (one bad day stops the whole save); the 7-day preview names the workspace zone and shows slots or "Closed"; a locked resource shows the hours read-only; a save for a resource that locked while the form was open is refused; another owner's resource page is not found and a save with a foreign id and forged fields changes nothing; navigation from the dashboard menu and from the resource page; logged-out redirects. To stay under Supabase's sign-in rate limit, these tests share one Pro owner per worker (each test still has its own resource).
+
+**Rate limit note.** Supabase limits password sign-ins. The whole UI suite now makes about 190 sign-ins; if a run reports "Request rate limit reached", wait a few minutes and run again (the helper retries a few times).
+
 ### Breakpoints for later UI tests
 
 When features are built (Phase 7 onwards), their tests check the layout at three widths, matching RESP-01 and RESP-02:
@@ -168,6 +179,8 @@ When features are built (Phase 7 onwards), their tests check the layout at three
 The public booking page and the widget must work fully at 375 px. Those tests live in `tests/ui/` next to `tests/db/`. They need the Chromium download; the database tests deliberately do not.
 
 ## 7. Change history
+
+- **2026-11-15 (Phase 10)** — Added T10, section 6d, the permanent no-leftovers check, and the rate-limit note.
 
 - **2026-11-15 (Phase 9)** — Added T12 (resources part), T17 part 2, T18 and T21, section 6c, the forged-id tests for Phase 8, and the rule that UI test owners log in with their session cookie and clean up their Storage files.
 
