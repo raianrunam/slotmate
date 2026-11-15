@@ -116,7 +116,7 @@ test.describe("Free owner", () => {
       await expect(page.getByTestId("chart-monthly")).toHaveCount(0);
       await expect(page.getByTestId("chart-resources")).toHaveCount(0);
       await expect(page.getByTestId("table-resources")).toHaveCount(0);
-      await expect(page.getByLabel("From")).toHaveCount(0);
+      await expect(page.getByLabel("From", { exact: true })).toHaveCount(0);
       // Not in the HTML at all (the server never sent it): the resource name is absent from the page source.
       const html = await page.content();
       expect(html).not.toContain(fx.resourceName);
@@ -187,8 +187,8 @@ test.describe("Pro owner", () => {
       expect(second).toBeTruthy();
 
       // A range in the past with no requests: zero totals and the "no data" message.
-      await page.getByLabel("From").fill(day(-20));
-      await page.getByLabel("To").fill(day(-10));
+      await page.getByLabel("From", { exact: true }).fill(day(-20));
+      await page.getByLabel("To", { exact: true }).fill(day(-10));
       await page.getByRole("button", { name: "Show" }).click();
       await expect(page).toHaveURL(new RegExp(`from=${day(-20)}`));
       await expect(total(page, "all")).toHaveText("0");

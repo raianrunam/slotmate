@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { Page } from "@playwright/test";
+import { test, type Page } from "@playwright/test";
 import { anonClient, serviceClient, type Db } from "../db/helpers";
 import { createTestUser, deleteTestUser, type TestUser } from "./owner";
 
@@ -16,11 +16,14 @@ export interface TestOwner extends TestUser {
 
 export const tag = () => randomBytes(4).toString("hex");
 
-const createdIds: string[] = [];
+// Owners are remembered together with the test FILE that made them. Several files run in the same worker process
+// and share this module, so a file's cleanup must only remove its own owners (a shared owner of another file,
+// created earlier in the same worker, must survive it).
+const created: { id: string; file: string }[] = [];
 
 export async function newOwner(): Promise<TestOwner> {
   const user = await createTestUser({ confirmed: true });
-  createdIds.push(user.id);
+  created.push({ id: user.id, file: test.info().file });
   const client = anonClient();
   // Supabase limits password sign-ins; a short retry rides out a brief burst. If the limit is
   // really exhausted (many tests in a row), wait a few minutes and run again.
@@ -80,12 +83,14 @@ export async function listResourceFiles(resourceId: string): Promise<string[]> {
 /** Call from afterAll: removes the files, then the owners. */
 export async function cleanupOwners(): Promise<void> {
   const storage = serviceClient().storage.from(BUCKET);
-  for (const id of createdIds) {
+  const file = test.info().file;
+  const mine = created.filter((c) => c.file === file).map((c) => c.id);
+  for (const id of mine) {
     const files = await listOwnerFiles(id);
     if (files.length > 0) await storage.remove(files);
   }
-  for (const id of createdIds) await deleteTestUser(id); // also records and clears the owner's resource folders
-  createdIds.length = 0;
+  for (const id of mine) await deleteTestUser(id); // also records and clears the owner's resource folders
+  for (let i = created.length - 1; i >= 0; i--) if (created[i].file === file) created.splice(i, 1);
 }
 
 export async function addWorkspace(owner: TestOwner, name: string, slug = `ws-${tag()}`, timeZone = "UTC") {

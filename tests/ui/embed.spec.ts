@@ -1,3 +1,5 @@
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { expect, test, type Browser, type FrameLocator, type Page } from "@playwright/test";
 import { serviceClient } from "../db/helpers";
 import { addDaysToDate, todayInZone } from "../../src/lib/time/slots";
@@ -16,7 +18,31 @@ test.use({ storageState: LOGGED_OUT });
 test.afterAll(cleanupOwners);
 
 const service = serviceClient();
-const HOST = "http://embed-host.test"; // a different origin than the app; answered by page.route, no real server
+// The host page is served by a small REAL local server on another port (so it is another origin than the app).
+// A page answered through page.route would look like a "public" address to Chromium's local-network check, which
+// then refuses to frame a localhost address (net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS).
+let hostServer: Server | null = null;
+let hostOrigin = "";
+async function startHost(): Promise<string> {
+  if (hostServer) return hostOrigin;
+  hostServer = createServer((req, res) => {
+    const url = new URL(req.url ?? "/", "http://host.local");
+    const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    const src = esc(url.searchParams.get("src") ?? "");
+    const title = esc(url.searchParams.get("title") ?? "Book now");
+    const width = esc(url.searchParams.get("w") ?? "100%");
+    const height = esc(url.searchParams.get("h") ?? "640");
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    res.end(`<!doctype html><html><head><meta charset="utf-8"><title>Host</title></head><body style="margin:0"><iframe id="widget" title="${title}" src="${src}" width="${width}" height="${height}" style="border:0"></iframe></body></html>`);
+  });
+  await new Promise<void>((resolve) => hostServer!.listen(0, "127.0.0.1", resolve));
+  hostOrigin = `http://127.0.0.1:${(hostServer.address() as AddressInfo).port}`;
+  return hostOrigin;
+}
+test.afterAll(async () => {
+  await new Promise<void>((resolve) => (hostServer ? hostServer.close(() => resolve()) : resolve()));
+  hostServer = null;
+});
 const day = (n: number) => addDaysToDate(todayInZone("UTC"), n);
 const rnd = () => 1 + Math.floor(Math.random() * 254);
 const fakeAddress = () => `10.${rnd()}.${rnd()}.${rnd()}`;
@@ -67,16 +93,11 @@ async function visitor(browser: Browser, baseURL: string, width = 800) {
   return { context, page };
 }
 
-/** Answers the host's own address with a page that holds an iframe (a real cross-origin embed). */
-async function openHost(page: Page, baseURL: string, src: string, title = "Book now") {
-  await page.route(`${HOST}/**`, (route) =>
-    route.fulfill({
-      contentType: "text/html",
-      body: `<!doctype html><html><head><meta charset="utf-8"><title>Host</title></head><body style="margin:0">
-<iframe id="widget" title="${title}" src="${baseURL}${src}" width="100%" height="640" style="border:0"></iframe></body></html>`,
-    }),
-  );
-  await page.goto(`${HOST}/`);
+/** Opens a host page (another origin) that holds an iframe of the given address (a real cross-origin embed). */
+async function openHost(page: Page, baseURL: string, src: string, title = "Book now", width = "100%", height = "640") {
+  const origin = await startHost();
+  const query = new URLSearchParams({ src: `${baseURL}${src}`, title, w: width, h: height });
+  await page.goto(`${origin}/?${query}`);
 }
 
 const widgetFrame = (page: Page): FrameLocator => page.frameLocator("#widget");
@@ -129,7 +150,8 @@ test.describe("the widget in an iframe on another origin", () => {
       await expect(link).toHaveAttribute("rel", /noopener/);
       await expect(link).toHaveAttribute("rel", /noreferrer/);
 
-      const rows = await service.from("bookings").select("status, visitor_name, visitor_email").eq("resource_id", fx.resourceId);
+      // Read as the owner: the server key may not read the visitor columns (Q3).
+      const rows = await owner.client.from("bookings").select("status, visitor_name, visitor_email").eq("resource_id", fx.resourceId);
       expect(rows.data).toEqual([{ status: "pending", visitor_name: "Ada Lovelace", visitor_email: email }]);
 
       const [popup] = await Promise.all([page.waitForEvent("popup"), link.click()]);
@@ -147,13 +169,7 @@ test.describe("the widget in an iframe on another origin", () => {
       const fx = await makeWorkspace(owner);
       const { context, page } = await visitor(browser, baseURL!, width + 40);
       try {
-        await page.route(`${HOST}/**`, (route) =>
-          route.fulfill({
-            contentType: "text/html",
-            body: `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0"><iframe id="widget" title="w" src="${baseURL}/embed/${fx.slug}" width="${width}" height="700" style="border:0"></iframe></body></html>`,
-          }),
-        );
-        await page.goto(`${HOST}/`);
+        await openHost(page, baseURL!, `/embed/${fx.slug}`, "w", String(width), "700");
         const frame = widgetFrame(page);
         await expect(frame.getByTestId("embed-root")).toBeVisible();
         const handle = await page.locator("#widget").elementHandle();
@@ -284,7 +300,8 @@ test.describe("the dashboard widget page", () => {
       expect(text).not.toMatch(/key|token|secret/i);
       await page.getByRole("button", { name: "Copy code" }).click();
       await expect(page.getByText("Code copied")).toBeVisible();
-      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(text);
+      const copied = await page.evaluate(() => navigator.clipboard.readText());
+      expect(copied.replace(/\s+/g, " ").trim()).toBe(text.replace(/\s+/g, " ").trim()); // the same code (only the line breaks and spaces may differ)
 
       await page.getByRole("radio", { name: "Dark" }).check();
       await page.getByRole("radio", { name: /^Grid/ }).check();
@@ -326,7 +343,17 @@ test.describe("the dashboard widget page", () => {
       expect((await savedOptions(fx.workspaceId)).theme).toBe("dark");
 
       // A tampered request that adds the Pro-only values is refused by the server and the database.
-      await forgeOnSubmit(page, '[data-testid="widget-form"]', { layout: "grid", backgroundColor: "#ff0000" });
+      // (What a person with the browser's developer tools does: enable the disabled fields and fill them in.)
+      await page.evaluate(() => {
+        const group = document.querySelector<HTMLFieldSetElement>('[data-testid="widget-layout-group"]')!;
+        group.disabled = false;
+        const grid = group.querySelector<HTMLInputElement>('input[name="layout"][value="grid"]')!;
+        grid.disabled = false;
+        grid.checked = true;
+        const colour = document.querySelector<HTMLInputElement>('input[name="backgroundColor"]')!;
+        colour.disabled = false;
+        colour.value = "#ff0000";
+      });
       await page.getByRole("radio", { name: "Light" }).check();
       await page.getByRole("button", { name: "Save widget options" }).click();
       await expect(page.getByTestId("widget-error")).toContainText("part of the Pro plan");
