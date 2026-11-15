@@ -138,6 +138,17 @@ Migrations 3–7 were written as files in one batch, then reviewed by **separate
 - **Checks (2026-11-15):** `npx tsc --noEmit`, `npx eslint` and `npm run build` clean; 106 unit, 146 UI and 25 database tests pass.
 - **Note for Phase 9 (DB15):** delete the Storage images of a workspace's resources before the workspace delete; the cascade does not touch Storage.
 
+## Phase 9 — Resource management and images (2026-11-15)
+
+- **Carry-overs from Phase 8:** tests that send another owner's workspace id (and forged `owner_id`, `is_locked`) to `updateWorkspace` and `deleteWorkspace` and prove nothing changes; T18 (`plans.ts` equals `plan_limits`, and `effectivePlan` equals `current_plan`).
+- **Built:** resources inside a workspace (list, create, edit, delete with confirmation), slot length 5–1440, capacity 1–1000, the availability switch, "2 of 3 resources" across the whole account (D2), the upgrade prompt, locked resources, and the workspace page listing its resources. Images: JPG, PNG or WebP, 2 MB, checked on the server by size and by the file's real first bytes; stored as `<owner>/<resource>/<random>.<ext>` with a server-made name; the path is recorded through `set_resource_image`; the old file is deleted after a replace. Deleting a resource or a workspace deletes the Storage files first (DB15); if Storage fails nothing is deleted.
+- **The secret key.** It is now read in exactly one module, `src/lib/supabase/admin.ts` (server-only), imported only by `src/features/resources/images.ts`. Unit tests check both facts and the client-bundle test still passes. `next.config.ts` raised the Server Action body limit to 3 MB (it applies to all Server Actions).
+- **Order of work decided:** find the resource with the owner's session and check the lock, validate, upload, record the path, delete the old file; a refused record deletes the new file again (DATABASE.md 5.4).
+- **Found while testing:** (1) many UI tests that each log in through the form hit Supabase's sign-in rate limit, so tests now log in with the owner's real session cookie (one sign-in per owner); (2) my first "foreign id" image test tampered with the wrong form and passed for the wrong reason; the review found the same class of weakness in the delete tests (the victim had no files), so they now give the victim an image and check the file afterwards; (3) the upload message hid the "Image removed" message (one shared state fixed it); (4) deleting a user does not delete their Storage files, so test cleanup removes them.
+- **Blocked check:** the read-only "no leftover test users or bucket files" check was blocked when run as a one-off script that loads the secret key, and was not run. The test suites' own cleanup and teardown ran. See the open items.
+- **Independent review** (fresh read-only reviewer, `phase9-review.txt`): 0 high, 2 medium, 13 low. Fixed: tests that could not detect a Storage delete in someone else's folder; a "forged fields" test that only swapped the id; a folder-clearing loop that could report success while files remained; a failed read shown as "not found"; a generic image description. Noted honestly: the 2 MB UI test proves the browser guard (the server check is proved by unit tests). Accepted: a concurrent replace or an upload during a delete can leave an orphan file, a failed old-file removal is only logged, the file signature check is shallow (it does not decode the image), the 3 MB limit applies to every Server Action, and the "See all resources" link on a workspace page is not filtered.
+- **Checks (2026-11-15):** `npx tsc --noEmit`, `npx eslint` and `npm run build` clean; unit, UI and 38 database tests pass.
+
 ## Agent mistakes and how they were caught
 
 Honest record of things the agents got wrong. Mistakes 1–9 happened in Phases 1–4a; 10–13 and 16 in Phase 4e (the migration reviews); 15 in Phase 4d; 14 and 17 in Phase 5.
@@ -215,6 +226,14 @@ Interface (Phase 6):
 - **Embed shell:** it follows the viewer's light or dark setting; the owner's saved theme (EMBED-04) arrives in Phase 14. The iframe header rules for `/embed` are also Phase 14.
 - **Placeholders to replace:** the landing page copy is a draft (Phase 18); every dashboard and booking shell is replaced by its real feature phase.
 
+Resources and images (Phase 9):
+
+- **Leftover check not run:** confirm (read-only) that no `slotmate-test-` users and no test files remain in the `resource-images` bucket. The owner can run it, or authorize a small leftover-check test.
+- **Orphan files:** a concurrent replace, or an upload during a delete, can leave a file nobody points to. A periodic sweep of files whose folder has no resource would close this.
+- **Image bytes** are checked by signature only; a corrupt file with a valid first few bytes is accepted. Decoding the image (a new package) would be stricter.
+- **Host limits:** check the 3 MB Server Action limit against the host's own request limit before deployment (Phase 17).
+- **Public image address:** images are public by design (D9); anyone with the address can view them.
+
 Authentication (Phase 7):
 
 - **Real-inbox check** by the owner (sign up, confirm, log in, forgot password, reset) is not done yet; it is the only proof of the PKCE `?code=` path with a real email.
@@ -231,5 +250,6 @@ Authentication (Phase 7):
 ## Change history
 
 - **2026-11-14** — Created (Phase 5) with entries for Phases 1–5.
+- **2026-11-15** — Added the Phase 9 entry.
 - **2026-11-15** — Added the Phase 8 entry.
 - **2026-11-15** — Added the Phase 7 entry, mistakes 22–28, and the authentication open items.

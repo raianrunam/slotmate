@@ -74,7 +74,7 @@ Read more:
 - **Phase 6** Design the frontend and reusable UI components: done. Design tokens (light and dark), shadcn/ui components and placeholder page shells; 88 UI checks pass at 375, 768 and 1280 px.
 - **Phase 7** Authentication: built and tested (sign up, log in, log out, forgot and reset password, protected dashboard). 73 unit checks, 129 UI checks and the 19 database tests pass. One manual check with a real inbox is still to be done by the project owner (see below).
 - **Phase 8** Workspace management: built and tested (create, edit, delete with confirmation, public address, time zone with the change warning, plan usage, locked workspaces). 106 unit checks, 146 UI checks and 25 database tests pass (T12, T16 part 1, T17 part 1 and T20 are new).
-- **Phase 9** Resource management: planned
+- **Phase 9** Resource management: built and tested (create, edit, delete, slot length, capacity, availability switch, plan usage, locked state, and an image per resource: JPG, PNG or WebP up to 2 MB, checked on the server by size and file signature). 144 unit checks, 171 UI checks and 38 database tests pass (T12 resources part, T17 part 2, T18 and T21 are new).
 - **Phase 10** Availability management: planned
 - **Phase 11** Public booking: planned
 - **Phase 12** Booking management: planned

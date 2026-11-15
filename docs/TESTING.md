@@ -4,7 +4,7 @@ Last updated: 2026-11-15 · Phase 8 · Sources: `docs/DATABASE.md` section 10, `
 
 This document says how SlotMate is tested, how to run the tests, what has been proved so far and what has not. The test *design* (what each test must prove) is in `docs/DATABASE.md` section 10; this document tracks the status.
 
-**Status in one line:** 13 of the 21 designed tests are implemented (T1–T8 and T19 from Phases 4–5; T12, T16 part 1, T17 part 1 and T20 from Phase 8), as 25 Playwright test cases, and all 25 pass against the development Supabase project (run on 2026-11-15, 51 seconds). The rest are planned. Unit checks (`npm run test:unit`) and user-interface checks (`npm run test:ui`) also exist (sections 6, 6a and 6b).
+**Status in one line:** 16 of the 21 designed tests are implemented in whole or in part (T1–T8 and T19 from Phases 4–5; T12, T16 part 1, T17 part 1 and T20 from Phase 8; T12 resources part, T17 part 2, T18 and T21 from Phase 9), as 38 Playwright test cases, and all 38 pass against the development Supabase project (run on 2026-11-15). The rest are planned. Unit checks (`npm run test:unit`) and user-interface checks (`npm run test:ui`) also exist (sections 6, 6a and 6b).
 
 ---
 
@@ -71,20 +71,21 @@ T1 to T21 are defined in `docs/DATABASE.md` section 10. Status as of 2026-11-14:
 - **T16 part 1 — Downgrade locks workspaces** (`t16-lock-workspaces.spec.ts`, 1 test; Phase 8). The plan is changed the way the Stripe webhook changes it (`service_role` UPDATE on `subscriptions`, with a `stripe_subscription_id` for Pro). Pro, two workspaces, back to Free: both are locked (nothing deleted, nothing chosen automatically). An owner UPDATE on a locked workspace changes nothing. The owner deletes one: the reconcile unlocks the other, which is editable again.
 - **T17 part 1 — Workspace delete cascade** (`t17-workspace-cascade.spec.ts`, 1 test; Phase 8). The owner deletes a workspace through their own login: the embed row, the resources, the opening hours and the bookings are gone (each is checked to exist first), and the monthly usage count stays (D19).
 - **T20 — Time zone** (`t20-time-zone.spec.ts`, 3 tests; Phase 8). An invalid zone name (`Mars/Olympus`, a typo, empty, `UTC+2`) is refused with `invalid_time_zone` on update and on insert, and a missing zone is refused (no default, DB10). Changing a workspace's zone to Tokyo, New York and Auckland keeps a booking's `starts_at` and `ends_at` exactly the same (A11).
+- **T12 — Plan-limit race, resources part** (`t12b-resource-limit-race.spec.ts`, 1 test; Phase 9). One Free owner fires 10 resource creates at the same instant straight through their own login: exactly 3 succeed (the Free limit), the other 7 get `resource_limit_reached`, and exactly 3 resources exist.
+- **T17 part 2 — Resource delete cascade** (`t17b-resource-cascade.spec.ts`, 2 tests; Phase 9). The owner deletes one resource: its opening hours and bookings are gone (each checked to exist first), the workspace stays, the monthly usage stays (D19). Another owner's resource cannot be deleted. The removal of the Storage files is proved through the app in the UI tests (section 6c).
+- **T18 — Plans match the database** (`t18-plans-match.spec.ts`, 2 tests; Phase 9). `PLAN_LIMITS` in `src/lib/plans.ts` equals the `plan_limits` table for every plan and number, and the app's Pro rule `effectivePlan` gives the same answer as the database function `current_plan` for seven subscription states.
+- **T21 — Image path and bucket** (`t21-image-path.spec.ts`, 8 tests; Phase 9). `set_resource_image`: a good path is recorded and NULL removes it; a foreign owner and unknown ids are refused (`resource_not_found`); paths outside `<owner>/<resource>/`, with `..`, with no file name, or empty are refused (`invalid_path`); a locked resource refuses a new path and NULL (`resource_locked`) and keeps its image. The bucket: the server key can write and the file is publicly readable by address; `anon` cannot upload, replace, delete or list; a logged-in owner cannot upload or list; the bucket itself refuses text, SVG and files over 2 MiB even from the server key. The test files are removed at the end.
 
 **Planned.** The phase in brackets is a proposal for when each test will be written (alongside the feature it checks); change it if the order of phases changes. Every test is re-run in Phase 17.
 
 - **T9 — Overlap rule through real paths** (Phase 11, public booking).
 - **T10 — Invalid slots refused by the function**, including the clock-change cases: both copies of the repeated hour, slots that end in it, the skipped hour, for several time zones (Phase 10, availability and the time library).
 - **T11 — Monthly limit** (Phase 11).
-- **T12 — Plan-limit race, resources part**, including direct inserts by an owner (Phase 9). The workspaces part is done (above).
 - **T13 — Status changes** (Phase 12, booking management).
 - **T14 — Rate limit** (Phase 11).
 - **T15 — Webhook memory** (Phase 15, Stripe billing).
 - **T16 part 2 — Downgrade lock and selection** for resources and `apply_downgrade_selection` (Phase 15). Part 1 is done (above).
-- **T17 part 2 — Cascades** for resources, accounts and Storage images (Phase 9). Part 1 is done (above).
-- **T18 — `src/lib/plans.ts` matches `plan_limits`**, and the app's Pro rule (`effectivePlan`) matches `current_plan` (Q12). Not written yet, although `plans.ts` and `effectivePlan` now exist.
-- **T21 — Image upload path**, including the `set_resource_image` path rules and the lock check (Phase 9, resources).
+- **T17 part 2, the account and Storage-image cases** (account delete). The workspace and resource cascades are done (above and in Phase 9).
 
 ## 4. Test data and cleanup rules
 
@@ -146,6 +147,16 @@ Status on 2026-11-15: 106 unit checks, 146 UI checks and 25 database tests pass.
 
 **Not covered:** a forged `owner_id` or `is_locked` sent straight to the Server Action (the database refuses them; T1 covers the database side), editing to a taken address, 21+ workspaces (the plans allow at most 5, so the 20-per-page rule cannot be reached yet), screen-reader behaviour.
 
+### 6c. Resource tests (Phase 9)
+
+Status on 2026-11-15: 144 unit checks, 171 UI checks and 38 database tests pass.
+
+**Unit** (`tests/unit/resources.spec.ts`): the resource schema (slot length and capacity: zero, negative, decimal, text, exponent, too large all refused; the edges 5, 1440, 1, 1000 accepted); image validation (JPG, PNG and WebP recognised from the first bytes; text, HTML, SVG, GIF, a RIFF that is not WebP and a truncated PNG refused; exactly 2 MB passes, one byte more is refused; stored paths are `<owner>/<resource>/<random>.<ext>` and reject bad ids); the database-error mapping; and source guards (every action calls `requireOwner()` first, image actions look the resource up and check the lock before any Storage call, the upload checks size and signature before uploading, deletes remove Storage files before rows for resources and for workspaces, the stored name is server-made). `tests/unit/architecture.spec.ts` now says: the secret-key name appears only in `src/lib/supabase/admin.ts`, which is server-only, and only `src/features/resources/images.ts` imports it; no client file imports either.
+
+**UI** (`tests/ui/resources.spec.ts`, each test with its own owner): create (workspace choice, usage "0 of 3 resources"), bad name, slot length and capacity values, edit including the availability switch, delete with Cancel, Escape and confirm, the workspace page listing its resources and the links both ways, the 4th resource on Free (disabled create, upgrade prompt, and a create from a form opened earlier), the account-wide count, image upload (the picture really loads from the public address), replace (the old file is deleted from the bucket), remove, a file over 2 MB (the browser guard), a text file renamed .png and HTML/SVG files with image names (refused by the server, nothing stored), submitting no file, deleting a resource and a workspace deletes the image files (DB15), locked resources (labelled, read-only, image kept, no image buttons, delete allowed and removes the file), an upload for a resource that locked while the form was open, and the forged-id tests (another owner's resource id and forged `owner_id`, `workspace_id`, `is_locked`, `image_path` on update, delete, upload and remove; the victim's rows and image file are checked afterwards). `tests/ui/workspaces.spec.ts` got the same forged-id tests for `updateWorkspace` and `deleteWorkspace` (Phase 8 carry-over). `tests/ui/owners.ts` holds the shared helpers: owners log in with their real session cookie (one password sign-in per owner, because Supabase limits sign-ins; the real login form is tested in `auth.spec.ts`), and cleanup also deletes every file the owner left in the bucket, because deleting a user does not delete Storage files.
+
+**Not covered:** the server's own 2 MB check through the browser (the browser form refuses first; the check is proved by the unit tests), a request over 3 MB (Next.js answers 413 before our code runs), a failing Storage service, concurrent replace or delete of the same image, JPEG and WebP uploads through the UI (the signature check is unit tested; the UI uses PNG), an unlocked resource inside a locked workspace, and screen-reader behaviour.
+
 ### Breakpoints for later UI tests
 
 When features are built (Phase 7 onwards), their tests check the layout at three widths, matching RESP-01 and RESP-02:
@@ -157,6 +168,8 @@ When features are built (Phase 7 onwards), their tests check the layout at three
 The public booking page and the widget must work fully at 375 px. Those tests live in `tests/ui/` next to `tests/db/`. They need the Chromium download; the database tests deliberately do not.
 
 ## 7. Change history
+
+- **2026-11-15 (Phase 9)** — Added T12 (resources part), T17 part 2, T18 and T21, section 6c, the forged-id tests for Phase 8, and the rule that UI test owners log in with their session cookie and clean up their Storage files.
 
 - **2026-11-15 (Phase 8)** — Added T12 (workspaces part), T16 part 1, T17 part 1 and T20, section 6b, and the unit and UI workspace tests. The old placeholder delete-dialog test moved to the real workspace list.
 
