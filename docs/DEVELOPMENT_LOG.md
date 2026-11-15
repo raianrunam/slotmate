@@ -129,6 +129,15 @@ Migrations 3–7 were written as files in one batch, then reviewed by **separate
 - **Independent review:** a fresh read-only reviewer (round 4 of the technique) found no high-severity issue and 15 findings. Fixed: a sign-up answer that revealed whether an address had an account (the rate-limit message), other sessions surviving a password reset, the reset form opening for any logged-in session, unused email-link types, the cache headers Supabase asks for, missing anti-framing headers, a cross-site way to clear the reset marker, and a weak test. Accepted or noted: email scanners can use up one-time links, small timing differences, no captcha, redirect-list hygiene. Report and responses: `phase7-review.txt`.
 - **Still to do by the owner:** one real-inbox check (steps in the Phase 7 completion report), and turning on "Secure password change" in the Supabase dashboard.
 
+## Phase 8 — Workspace management (2026-11-15)
+
+- **Built:** a list (20 per page), create and edit forms, delete with the confirmation dialog, the public address (suggested from the name, editable, live format hint), a searchable time zone list with the browser zone suggested and the A11 warning, "1 of 1 workspaces" usage, an upgrade prompt at the limit, locked workspaces (visible, labelled "Locked (plan limit)", read-only, deletable), and a real workspace count on the dashboard overview. Server Actions call `requireOwner()` first and use the owner's own session (RLS); the secret key is not used. Database errors become fixed friendly messages and a deadlock (40P01) is retried once (Q10). No migration, no new package, no Supabase setting changed.
+- **Hydration warning** traced to Grammarly extension during manual testing, not an app bug. `suppressHydrationWarning` was added to `<body>` only.
+- **Found while building:** a dynamic route (`/dashboard/workspaces/[id]`) broke the build because the sidebar's `usePathname()` was not inside Suspense; fixed in the sidebar. A UI test failed because Next keeps the previous page hidden in the page, so a text search found the hidden copy; tests now search inside the visible cards.
+- **Independent review** (fresh read-only reviewer, report `phase8-review.txt`): 0 high, 2 medium, 10 low. Fixed: valid time zones such as Asia/Kolkata were refused because the browser's list is old (now any Area/City name the runtime understands is accepted; the database stays the final check); a page number past the end showed "No workspaces yet" (the count is now read first); a failed plan read could show a false "limit reached" (now an error); `?notice=` accepted prototype keys; the live address hint is announced. Accepted and noted: a stale edit form can overwrite newer changes, no focus move to the first invalid field, the disabled "New workspace" button has no reason for assistive technology (the notice below it explains), name length counts UTF-16 units, a taken address confirms that the address exists (including a locked workspace's).
+- **Checks (2026-11-15):** `npx tsc --noEmit`, `npx eslint` and `npm run build` clean; 106 unit, 146 UI and 25 database tests pass.
+- **Note for Phase 9 (DB15):** delete the Storage images of a workspace's resources before the workspace delete; the cascade does not touch Storage.
+
 ## Agent mistakes and how they were caught
 
 Honest record of things the agents got wrong. Mistakes 1–9 happened in Phases 1–4a; 10–13 and 16 in Phase 4e (the migration reviews); 15 in Phase 4d; 14 and 17 in Phase 5.
@@ -222,4 +231,5 @@ Authentication (Phase 7):
 ## Change history
 
 - **2026-11-14** — Created (Phase 5) with entries for Phases 1–5.
+- **2026-11-15** — Added the Phase 8 entry.
 - **2026-11-15** — Added the Phase 7 entry, mistakes 22–28, and the authentication open items.

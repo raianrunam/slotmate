@@ -1,10 +1,10 @@
 # SlotMate — Testing
 
-Last updated: 2026-11-14 · Phase 5 · Sources: `docs/DATABASE.md` section 10, `tests/db/`
+Last updated: 2026-11-15 · Phase 8 · Sources: `docs/DATABASE.md` section 10, `tests/db/`
 
 This document says how SlotMate is tested, how to run the tests, what has been proved so far and what has not. The test *design* (what each test must prove) is in `docs/DATABASE.md` section 10; this document tracks the status.
 
-**Status in one line:** 9 of the 21 designed tests (T1–T8 and T19) are implemented, as 19 Playwright test cases, and all pass against the development Supabase project (run on 2026-11-14: 19 passed in 44 seconds; a read-only check afterwards found no test data left behind). The other database tests are planned. User-interface checks also exist (section 6: `npm run test:ui`, 88 checks passing).
+**Status in one line:** 13 of the 21 designed tests are implemented (T1–T8 and T19 from Phases 4–5; T12, T16 part 1, T17 part 1 and T20 from Phase 8), as 25 Playwright test cases, and all 25 pass against the development Supabase project (run on 2026-11-15, 51 seconds). The rest are planned. Unit checks (`npm run test:unit`) and user-interface checks (`npm run test:ui`) also exist (sections 6, 6a and 6b).
 
 ---
 
@@ -67,20 +67,23 @@ T1 to T21 are defined in `docs/DATABASE.md` section 10. Status as of 2026-11-14:
 - **T7 — RLS audit** (`t07-rls-audit.spec.ts`, 2 tests). All 11 tables in `public` have RLS enabled; no policy is granted to `anon` or `PUBLIC`.
 - **T8 — Parallel booking** (`t08-parallel-booking.spec.ts`, 1 test). 20 rounds of 3 simultaneous `submit_booking` calls for one slot: exactly one winner per round, every loser gets `slot_taken`, and the owner's monthly count rises by exactly 1 per round.
 - **T19 — Sign-up trigger** (`t19-signup-trigger.spec.ts`, 1 test). Creating a user creates exactly one profile and one Free subscription; deleting the user removes the subscription row (through the cascade from the profile; our server cannot read `profiles`, so the profile's removal is implied, not asserted).
+- **T12 — Plan-limit race, workspaces part** (`t12-workspace-limit-race.spec.ts`, 1 test; Phase 8). One Free owner fires 10 workspace creates at the same instant through their own login: exactly 1 succeeds, the other 9 get `workspace_limit_reached`, and exactly one workspace exists afterwards. A create cancelled by a deadlock (40P01) is retried once, as the app does (Q10).
+- **T16 part 1 — Downgrade locks workspaces** (`t16-lock-workspaces.spec.ts`, 1 test; Phase 8). The plan is changed the way the Stripe webhook changes it (`service_role` UPDATE on `subscriptions`, with a `stripe_subscription_id` for Pro). Pro, two workspaces, back to Free: both are locked (nothing deleted, nothing chosen automatically). An owner UPDATE on a locked workspace changes nothing. The owner deletes one: the reconcile unlocks the other, which is editable again.
+- **T17 part 1 — Workspace delete cascade** (`t17-workspace-cascade.spec.ts`, 1 test; Phase 8). The owner deletes a workspace through their own login: the embed row, the resources, the opening hours and the bookings are gone (each is checked to exist first), and the monthly usage count stays (D19).
+- **T20 — Time zone** (`t20-time-zone.spec.ts`, 3 tests; Phase 8). An invalid zone name (`Mars/Olympus`, a typo, empty, `UTC+2`) is refused with `invalid_time_zone` on update and on insert, and a missing zone is refused (no default, DB10). Changing a workspace's zone to Tokyo, New York and Auckland keeps a booking's `starts_at` and `ends_at` exactly the same (A11).
 
 **Planned.** The phase in brackets is a proposal for when each test will be written (alongside the feature it checks); change it if the order of phases changes. Every test is re-run in Phase 17.
 
 - **T9 — Overlap rule through real paths** (Phase 11, public booking).
 - **T10 — Invalid slots refused by the function**, including the clock-change cases: both copies of the repeated hour, slots that end in it, the skipped hour, for several time zones (Phase 10, availability and the time library).
 - **T11 — Monthly limit** (Phase 11).
-- **T12 — Plan-limit race** for workspaces and resources, including direct inserts by an owner (Phase 9, after both exist).
+- **T12 — Plan-limit race, resources part**, including direct inserts by an owner (Phase 9). The workspaces part is done (above).
 - **T13 — Status changes** (Phase 12, booking management).
 - **T14 — Rate limit** (Phase 11).
 - **T15 — Webhook memory** (Phase 15, Stripe billing).
-- **T16 — Downgrade lock and selection** (Phase 15).
-- **T17 — Cascades** (Phase 9).
-- **T18 — `src/lib/plans.ts` matches `plan_limits`** (Phase 8, when `plans.ts` is created).
-- **T20 — Time zone validation** (Phase 8, workspaces).
+- **T16 part 2 — Downgrade lock and selection** for resources and `apply_downgrade_selection` (Phase 15). Part 1 is done (above).
+- **T17 part 2 — Cascades** for resources, accounts and Storage images (Phase 9). Part 1 is done (above).
+- **T18 — `src/lib/plans.ts` matches `plan_limits`**, and the app's Pro rule (`effectivePlan`) matches `current_plan` (Q12). Not written yet, although `plans.ts` and `effectivePlan` now exist.
 - **T21 — Image upload path**, including the `set_resource_image` path rules and the lock check (Phase 9, resources).
 
 ## 4. Test data and cleanup rules
@@ -133,6 +136,16 @@ Status on 2026-11-15: 73 unit checks, 129 UI checks (88 from Phase 6 plus the ne
 
 **Cleanup.** The UI run deletes its owners in `afterAll` and in a global teardown that also sweeps any `slotmate-test-` user. The leftover count was not checked separately by an extra script (it was blocked as an unauthorized use of the secret key); the sweep and the tests passing are the evidence.
 
+### 6b. Workspace tests (Phase 8)
+
+Status on 2026-11-15: 106 unit checks, 146 UI checks and 25 database tests pass.
+
+**Unit** (`tests/unit/workspaces.spec.ts`): slug rules (valid and invalid examples, the live hint and the server rule agree), the slug suggestion, the zod schema, the time zone list (Asia/Kolkata and Europe/Kyiv accepted; offsets and junk refused), the database-error mapping (each known error becomes a fixed friendly message, raw database text never appears), the one deadlock retry, the app's Pro rule (`effectivePlan`), and source guards (every action calls `requireOwner()` first, no secret key, the delete button only submits through the confirmation dialog).
+
+**UI** (`tests/ui/workspaces.spec.ts`, each test with its own throw-away owner logged in through the real login form): create (suggested address and browser zone), empty name, invalid address (live hint and server refusal), missing and unknown time zone, an address taken by ANOTHER owner, limit reached on Free (disabled create, upgrade prompt, and a second create from a form opened earlier), edit, empty name on edit, the time zone change warning, another owner's workspace is "not found", delete with Cancel, Escape and confirm, locked workspaces (labelled, read-only, delete allowed, the rest unlocks), a save on a workspace that locked after the form was opened, the overview count, logged-out redirects, and the two regression tests from the review (Asia/Kolkata, a page number past the end).
+
+**Not covered:** a forged `owner_id` or `is_locked` sent straight to the Server Action (the database refuses them; T1 covers the database side), editing to a taken address, 21+ workspaces (the plans allow at most 5, so the 20-per-page rule cannot be reached yet), screen-reader behaviour.
+
 ### Breakpoints for later UI tests
 
 When features are built (Phase 7 onwards), their tests check the layout at three widths, matching RESP-01 and RESP-02:
@@ -144,6 +157,8 @@ When features are built (Phase 7 onwards), their tests check the layout at three
 The public booking page and the widget must work fully at 375 px. Those tests live in `tests/ui/` next to `tests/db/`. They need the Chromium download; the database tests deliberately do not.
 
 ## 7. Change history
+
+- **2026-11-15 (Phase 8)** — Added T12 (workspaces part), T16 part 1, T17 part 1 and T20, section 6b, and the unit and UI workspace tests. The old placeholder delete-dialog test moved to the real workspace list.
 
 - **2026-11-15 (Phase 7)** — Added section 6a: unit tests (`npm run test:unit`), authentication UI tests, the client-bundle check, and the rule that the UI tests now need `.env.local`.
 - **2026-11-14** — Created (Phase 5). Documents the database tests T1–T8 and T19, which were written and run on this date.
