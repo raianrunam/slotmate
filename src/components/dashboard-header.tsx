@@ -5,10 +5,12 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Suspense } from "react";
 import { OwnerUserMenu } from "@/components/owner-user-menu";
 import { getPendingCount } from "@/features/bookings/queries";
+import { getOwnerPlan } from "@/features/billing/queries";
 
 // These two read the login cookie (the pending count), so each streams in inside <Suspense>.
 async function MobileNavWithCount() {
-  return <DashboardMobileNav pendingCount={await getPendingCount()} />;
+  const [pendingCount, plan] = await Promise.all([getPendingCount(), getOwnerPlan()]);
+  return <DashboardMobileNav pendingCount={pendingCount} plan={plan} />;
 }
 async function HeaderBadge() {
   return <NotificationBadge count={await getPendingCount()} />;

@@ -3,10 +3,16 @@ import { DashboardNav } from "@/components/dashboard-nav";
 import { Logo } from "@/components/logo";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { getPendingCount } from "@/features/bookings/queries";
+import { getOwnerPlan } from "@/features/billing/queries";
 
 // The navigation with the pending-request count (NOTIF-02). It reads the login cookie, so it streams in.
 async function SidebarNav() {
   return <DashboardNav pendingCount={await getPendingCount()} />;
+}
+
+// The small upgrade card is only for Free owners (a Pro owner needs no nudge).
+async function SidebarUpgrade() {
+  return (await getOwnerPlan()) === "free" ? <UpgradePrompt /> : null;
 }
 
 // The fixed sidebar of the dashboard on desktop (1024 px and wider).
@@ -27,7 +33,9 @@ export function DashboardSidebar() {
           <SidebarNav />
         </Suspense>
       </div>
-      <UpgradePrompt />
+      <Suspense fallback={null}>
+        <SidebarUpgrade />
+      </Suspense>
     </aside>
   );
 }

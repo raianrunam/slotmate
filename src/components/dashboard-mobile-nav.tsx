@@ -15,10 +15,11 @@ import {
 import { DashboardNav } from "@/components/dashboard-nav";
 import { Logo } from "@/components/logo";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
+import type { PlanId } from "@/lib/plans";
 
 // The dashboard menu on phones and tablets: a button in the header that opens
 // the navigation in a side sheet (below 1024 px). The sheet closes when a link is chosen.
-export function DashboardMobileNav({ pendingCount = 0 }: { pendingCount?: number }) {
+export function DashboardMobileNav({ pendingCount = 0, plan = null }: { pendingCount?: number; plan?: PlanId | null }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -51,7 +52,7 @@ export function DashboardMobileNav({ pendingCount = 0 }: { pendingCount?: number
         <div className="flex-1 overflow-y-auto">
           <DashboardNav onNavigate={() => setOpen(false)} pendingCount={pendingCount} />
         </div>
-        <UpgradePrompt />
+        {plan === "free" ? <UpgradePrompt /> : null}
       </SheetContent>
     </Sheet>
   );

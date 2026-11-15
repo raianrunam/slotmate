@@ -3,8 +3,8 @@ import { SparklesIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PLANS } from "@/lib/plans";
 
-// A small card that nudges a Free owner towards Pro. Placeholder: it does not
-// know the owner's real plan yet (that needs the database, Phase 15).
+// A small card that nudges a Free owner towards Pro. The caller shows it only when the
+// owner's real plan is Free (billing queries: getOwnerPlan), so a Pro owner never sees it.
 export function UpgradePrompt() {
   const { free, pro } = PLANS;
   return (
@@ -21,7 +21,6 @@ export function UpgradePrompt() {
       <Button asChild className="h-10 w-full sm:h-8">
         <Link href="/dashboard/billing">See Pro</Link>
       </Button>
-      <p className="text-xs text-muted-foreground">Placeholder: plan shown is sample text.</p>
     </div>
   );
 }
