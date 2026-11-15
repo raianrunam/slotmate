@@ -83,8 +83,42 @@ function ledgerIds(): string[] {
     return []
   }
 }
+/**
+ * Image files live under <resource_id>/ (migration 8), no longer under the owner's id. So the ids of
+ * the resources of TEST owners are recorded too, in a second ledger: when a test owner is deleted
+ * (the resources vanish with it) the ids are already written down, and the teardown can still find
+ * and remove the files. The ledgers are only ever filled from test owners.
+ */
+const RESOURCE_LEDGER = path.join(tmpdir(), 'slotmate-test-resource-ids.txt')
+export function recordTestResourceId(id: string): void {
+  appendFileSync(RESOURCE_LEDGER, id + '\n')
+}
+function resourceLedgerIds(): string[] {
+  try {
+    return readFileSync(RESOURCE_LEDGER, 'utf8').split('\n').filter((l) => /^[0-9a-f-]{36}$/.test(l))
+  } catch {
+    return []
+  }
+}
 export function clearLedger(): void {
   rmSync(LEDGER, { force: true })
+  rmSync(RESOURCE_LEDGER, { force: true })
+}
+
+/**
+ * Before a TEST owner is deleted: writes down the ids of their resources and removes the files in
+ * those resources' folders (deleting a user does NOT delete Storage files). Safe to call twice.
+ */
+export async function forgetOwnerFiles(ownerId: string): Promise<void> {
+  const service = serviceClient()
+  const { data, error } = await service.from('resources').select('id').eq('owner_id', ownerId)
+  if (error) throw new Error(`resource lookup failed: ${error.message}`)
+  const storage = service.storage.from(IMAGE_BUCKET)
+  for (const { id } of data ?? []) {
+    recordTestResourceId(id)
+    const files = await bucketFilesUnder(id)
+    if (files.length > 0) await storage.remove(files)
+  }
 }
 
 export async function createOwner(): Promise<TestOwner> {
@@ -113,6 +147,7 @@ export async function createOwner(): Promise<TestOwner> {
 
 /** Deletes one test owner (cascades to profile, subscription and everything else). */
 export async function deleteOwner(id: string): Promise<void> {
+  await forgetOwnerFiles(id)
   const { error } = await serviceClient().auth.admin.deleteUser(id)
   if (error && !/not found/i.test(error.message)) {
     throw new Error(`auth.admin.deleteUser failed: ${error.message}`)
@@ -170,13 +205,10 @@ async function allUsers(): Promise<{ id: string; email: string | undefined }[]> 
  * a user does NOT delete their Storage files). Returns how many users were deleted.
  */
 export async function sweepTestUsers(): Promise<number> {
-  const storage = serviceClient().storage.from(IMAGE_BUCKET)
   let deleted = 0
   for (const user of await allUsers()) {
     if (user.email && TEST_EMAIL.test(user.email)) {
-      const files = await bucketFilesUnder(user.id)
-      if (files.length > 0) await storage.remove(files)
-      await deleteOwner(user.id)
+      await deleteOwner(user.id) // also removes the files of the owner's resources
       deleted++
     }
   }
@@ -184,7 +216,7 @@ export async function sweepTestUsers(): Promise<number> {
 }
 
 /**
- * Removes the bucket files of TEST artifacts only: the folders of test user ids recorded
+ * Removes the bucket files of TEST artifacts only: the folders of test user ids and test resource ids recorded
  * during this run (see the ledger above; the users themselves are already deleted) and
  * the t21-* folders of the bucket tests. Folders of anyone else are never touched, even
  * if their owner no longer exists. Returns how many files were removed.
@@ -193,7 +225,7 @@ export async function removeOrphanBucketFiles(): Promise<number> {
   const storage = serviceClient().storage.from(IMAGE_BUCKET)
   const top = await storage.list('', { limit: 1000 })
   if (top.error) throw new Error(`storage list failed: ${top.error.message}`)
-  const mine = new Set(ledgerIds())
+  const mine = new Set([...ledgerIds(), ...resourceLedgerIds()])
   let removed = 0
   for (const entry of top.data ?? []) {
     if (!mine.has(entry.name) && !entry.name.startsWith('t21-')) continue
@@ -216,7 +248,7 @@ export async function removeOrphanBucketFiles(): Promise<number> {
 export async function assertNoLeftovers(): Promise<{ testUsers: number; files: number }> {
   const users = await allUsers()
   const testUsers = users.filter((u) => u.email && TEST_EMAIL.test(u.email))
-  const testIds = new Set([...testUsers.map((u) => u.id), ...ledgerIds()])
+  const testIds = new Set([...testUsers.map((u) => u.id), ...ledgerIds(), ...resourceLedgerIds()])
   const top = await serviceClient().storage.from(IMAGE_BUCKET).list('', { limit: 1000 })
   if (top.error) throw new Error(`storage list failed: ${top.error.message}`)
   let files = 0

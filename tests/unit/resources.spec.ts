@@ -116,13 +116,13 @@ test.describe("image validation by size and file signature (RES-05, S1)", () => 
     over.set(png);
     expect(checkImageBytes(over)).toEqual({ ok: false, message: IMAGE_MESSAGES.tooLarge });
   });
-  test("the stored path is <owner>/<resource>/<random>.<ext>, never the owner's file name", () => {
-    expect(imagePath(OWNER, RESOURCE, RANDOM, "png")).toBe(`${OWNER}/${RESOURCE}/${RANDOM}.png`);
-    expect(imageFolder(OWNER, RESOURCE)).toBe(`${OWNER}/${RESOURCE}`);
+  test("the stored path is <resource>/<random>.<ext>, never the owner's file name", () => {
+    expect(imagePath(RESOURCE, RANDOM, "png")).toBe(`${RESOURCE}/${RANDOM}.png`);
+    expect(imageFolder(RESOURCE)).toBe(RESOURCE);
     for (const bad of ["../x", "a/b", "", "Z".repeat(36)]) {
-      expect(() => imagePath(OWNER, RESOURCE, bad, "png"), bad).toThrow();
-      expect(() => imagePath(bad, RESOURCE, RANDOM, "png"), bad).toThrow();
-      expect(() => imageFolder(OWNER, bad), bad).toThrow();
+      expect(() => imagePath(RESOURCE, bad, "png"), bad).toThrow();
+      expect(() => imagePath(bad, RANDOM, "png"), bad).toThrow();
+      expect(() => imageFolder(bad), bad).toThrow();
     }
   });
 });
@@ -199,7 +199,7 @@ test.describe("source guards for the resources feature", () => {
 
   test("the upload stores under a server-made name and the detected content type", () => {
     const images = read("images.ts");
-    expect(images).toMatch(/imagePath\(args\.ownerId, args\.resourceId, randomUUID\(\), args\.image\.ext\)/);
+    expect(images).toMatch(/imagePath\(args\.resourceId, randomUUID\(\), args\.image\.ext\)/);
     expect(images).toMatch(/contentType: args\.image\.contentType/);
     expect(images).not.toMatch(/file\.name|\.name\b.*upload/);
   });

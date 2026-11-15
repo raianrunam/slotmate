@@ -13,7 +13,7 @@ import {
 
 // T21 - Image upload path (S1, D9, DATABASE.md 5.4).
 //  * set_resource_image refuses a foreign owner, a locked resource, a path
-//    outside <owner>/<resource>/ and a path with "..".
+//    outside <resource>/ (migration 8 layout) and a path with "..".
 //  * It records a good path and NULL removes it.
 //  * Browser roles (anon, a logged-in owner) cannot list or write the bucket;
 //    public files are readable; the bucket refuses other types and > 2 MiB.
@@ -52,7 +52,7 @@ test.describe('T21 set_resource_image', () => {
     (await owner.client.from('resources').select('image_path').eq('id', resourceId).single()).data?.image_path
 
   test('a good path is recorded and NULL removes it', async () => {
-    const path = `${a.id}/${ra.resourceId}/${randomUUID()}.png`
+    const path = `${ra.resourceId}/${randomUUID()}.png`
     expect((await call(a.id, ra.resourceId, path)).error).toBeNull()
     expect(await stored(a, ra.resourceId)).toBe(path)
     expect((await call(a.id, ra.resourceId, null)).error).toBeNull()
@@ -63,27 +63,38 @@ test.describe('T21 set_resource_image', () => {
     // B asks to change A's resource, with B's own folder or with A's folder.
     // (The path rule is checked first, so A's folder gives invalid_path; B's own
     // folder passes the path rule and is stopped by the ownership check.)
-    expect((await call(b.id, ra.resourceId, `${b.id}/${ra.resourceId}/x.png`)).error?.message).toBe('resource_not_found')
-    expect((await call(b.id, ra.resourceId, `${a.id}/${ra.resourceId}/x.png`)).error?.message).toBe('invalid_path')
+    expect((await call(b.id, ra.resourceId, `${ra.resourceId}/x.png`)).error?.message).toBe('resource_not_found')
+    expect((await call(b.id, ra.resourceId, `${b.id}/${ra.resourceId}/x.png`)).error?.message).toBe('invalid_path') // the old layout is refused
     // ...and the other way round.
-    expect((await call(a.id, rb.resourceId, `${a.id}/${rb.resourceId}/x.png`)).error?.message).toBe('resource_not_found')
+    expect((await call(a.id, rb.resourceId, `${rb.resourceId}/x.png`)).error?.message).toBe('resource_not_found')
     expect(await stored(a, ra.resourceId)).toBeNull()
     expect(await stored(b, rb.resourceId)).toBeNull()
     // Unknown ids too.
     const unknown = randomUUID()
-    expect((await call(a.id, unknown, `${a.id}/${unknown}/x.png`)).error?.message).toBe('resource_not_found')
+    expect((await call(a.id, unknown, `${unknown}/x.png`)).error?.message).toBe('resource_not_found')
   })
 
-  test('a path outside <owner>/<resource>/, with "..", or without a file name is refused', async () => {
+  test('a path outside <resource>/, the old layout, "..", or anything but one plain file name is refused', async () => {
     const other = randomUUID()
+    const r = ra.resourceId
     const bad = [
-      `${a.id}/${other}/x.png`, // another resource's folder
-      `${b.id}/${ra.resourceId}/x.png`, // another owner's folder
-      `${a.id}/${ra.resourceId}`, // no trailing slash and file name
-      `${a.id}/${ra.resourceId}/`, // folder only
-      `${a.id}/${ra.resourceId}/../${rb.resourceId}/x.png`,
-      `${a.id}/${ra.resourceId}/..x.png`,
-      `/${a.id}/${ra.resourceId}/x.png`,
+      `${other}/x.png`, // another resource's folder
+      `${rb.resourceId}/x.png`, // another resource of another owner
+      `${a.id}/${r}/x.png`, // the OLD layout (owner id first)
+      `${r}`, // no slash and file name
+      `${r}/`, // folder only
+      `${r}/../${rb.resourceId}/x.png`,
+      `${r}/..x.png`,
+      `${r}/sub/x.png`, // a second folder level
+      `${r}/x`, // no extension
+      `${r}/x.png/`, // trailing slash
+      `${r}/x%2e.png`, // odd characters
+      `${r}/x?.png`,
+      `${r}/x#.png`,
+      `${r}/x\\y.png`, // a backslash
+      `${r}/x y.png`,
+      `${r}/.png`,
+      `/${r}/x.png`,
       `x.png`,
       '',
     ]
@@ -106,7 +117,7 @@ test.describe('T21 set_resource_image', () => {
     const first = await createBookableResource(c)
     await createBookableResource(c)
     // A good image while still unlocked, so "NULL is refused" is meaningful.
-    const path = `${c.id}/${first.resourceId}/${randomUUID()}.png`
+    const path = `${first.resourceId}/${randomUUID()}.png`
     expect((await call(c.id, first.resourceId, path)).error).toBeNull()
 
     const down = await service
@@ -118,7 +129,7 @@ test.describe('T21 set_resource_image', () => {
     const locked = await c.client.from('resources').select('is_locked').eq('id', first.resourceId).single()
     expect(locked.data?.is_locked, 'the resource is locked').toBe(true)
 
-    const again = await call(c.id, first.resourceId, `${c.id}/${first.resourceId}/${randomUUID()}.png`)
+    const again = await call(c.id, first.resourceId, `${first.resourceId}/${randomUUID()}.png`)
     expect(again.error?.message).toBe('resource_locked')
     expect((await call(c.id, first.resourceId, null)).error?.message).toBe('resource_locked')
     expect(await stored(c, first.resourceId), 'the recorded image is unchanged').toBe(path)
@@ -177,10 +188,10 @@ test.describe('T21 the bucket', () => {
   test('a logged-in owner has no write or list rights on the bucket either', async () => {
     const owner = await createOwner()
     try {
-      const path = `${owner.id}/${randomUUID()}/${randomUUID()}.png`
+      const path = `${randomUUID()}/${randomUUID()}.png`
       const up = await owner.client.storage.from(BUCKET).upload(path, PNG, { contentType: 'image/png' })
       expect(up.error, 'owner upload refused (uploads go through the server only)').not.toBeNull()
-      const listed = await owner.client.storage.from(BUCKET).list(owner.id)
+      const listed = await owner.client.storage.from(BUCKET).list(path.split('/')[0])
       expect(listed.error !== null || (listed.data ?? []).length === 0, 'owner cannot list').toBe(true)
     } finally {
       await deleteCreatedOwners()

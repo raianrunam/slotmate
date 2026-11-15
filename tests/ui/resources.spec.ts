@@ -46,7 +46,7 @@ const png = (bytes = PNG_BYTES, name = "photo.png") => ({ name, mimeType: "image
 // Puts an image in place for a resource the way the app does it (server key), for the victim tests.
 async function giveImage(ownerId: string, resourceId: string): Promise<string> {
   const service = serviceClient();
-  const path = `${ownerId}/${resourceId}/${crypto.randomUUID()}.png`;
+  const path = `${resourceId}/${crypto.randomUUID()}.png`;
   expect((await service.storage.from("resource-images").upload(path, PNG_BYTES, { contentType: "image/png" })).error).toBeNull();
   expect((await service.rpc("set_resource_image", { p_owner_id: ownerId, p_resource_id: resourceId, p_path: path })).error).toBeNull();
   return path;
@@ -235,10 +235,10 @@ test.describe("image (RES-05, D9, S1)", () => {
     await expect(image).toBeVisible();
 
     const [stored] = await storedResources(owner.id);
-    expect(stored.image_path).toMatch(new RegExp(`^${owner.id}/${ids[0]}/[0-9a-f-]{36}\\.png$`));
+    expect(stored.image_path).toMatch(new RegExp(`^${ids[0]}/[0-9a-f-]{36}\\.png$`));
     // The picture really loads from the public address and the file really exists.
     await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth)).toBe(1);
-    const firstFiles = await listResourceFiles(owner.id, ids[0]);
+    const firstFiles = await listResourceFiles(ids[0]);
     expect(firstFiles).toEqual([stored.image_path]);
 
     // Replace: a different file; the old one is deleted, the path changes.
@@ -247,15 +247,15 @@ test.describe("image (RES-05, D9, S1)", () => {
     await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
     await expect.poll(async () => (await storedResources(owner.id))[0].image_path).not.toBe(stored.image_path);
     const [after] = await storedResources(owner.id);
-    expect(await listResourceFiles(owner.id, ids[0]), "only the new file remains").toEqual([after.image_path]);
-    expect(await listResourceFiles(owner.id, ids[0])).not.toContain(stored.image_path);
+    expect(await listResourceFiles(ids[0]), "only the new file remains").toEqual([after.image_path]);
+    expect(await listResourceFiles(ids[0])).not.toContain(stored.image_path);
 
     // Remove.
     await page.getByRole("button", { name: "Remove image" }).click();
     await expect(page.getByTestId("image-message")).toHaveText("Image removed.");
     await expect(page.getByTestId("resource-image-placeholder")).toBeVisible();
     expect((await storedResources(owner.id))[0].image_path).toBeNull();
-    expect(await listResourceFiles(owner.id, ids[0]), "the file is gone").toEqual([]);
+    expect(await listResourceFiles(ids[0]), "the file is gone").toEqual([]);
   });
 
   // NOTE: the browser form refuses a file over 2 MB BEFORE sending it (so nobody uploads
@@ -323,8 +323,8 @@ test.describe("image (RES-05, D9, S1)", () => {
     await page.getByRole("button", { name: "Delete resource Room 1" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Delete resource", exact: true }).click();
     await expect(page).toHaveURL(/notice=deleted/);
-    expect(await listResourceFiles(owner.id, ids[0]), "deleted resource's file removed").toEqual([]);
-    expect(await listResourceFiles(owner.id, ids[1]), "the other file stays").toHaveLength(1);
+    expect(await listResourceFiles(ids[0]), "deleted resource's file removed").toEqual([]);
+    expect(await listResourceFiles(ids[1]), "the other file stays").toHaveLength(1);
 
     // Workspace delete: the remaining resource's file goes too (DB15).
     await page.goto(`/dashboard/workspaces/${workspaceId}`);
@@ -373,7 +373,7 @@ test.describe("locked resources (after a downgrade)", () => {
     await page.getByRole("button", { name: "Delete resource Locked room" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Delete resource", exact: true }).click();
     await expect(page).toHaveURL(/notice=deleted/);
-    expect(await listResourceFiles(owner.id, r1)).toEqual([]);
+    expect(await listResourceFiles(r1)).toEqual([]);
   });
 
   test("an image upload for a resource that locked after the page opened is refused and stores nothing", async ({ page }) => {
@@ -461,7 +461,7 @@ test.describe("another owner's resource and forged fields (the server refuses)",
     const { other, id: foreignId } = await victim();
     // The victim has an image, put in place the way the app does it (server key).
     const service = serviceClient();
-    const victimPath = `${other.id}/${foreignId}/${tag()}-${tag()}-${tag()}.png`.replace(/[^0-9a-f/.-]/g, "0");
+    const victimPath = `${foreignId}/${tag()}-${tag()}-${tag()}.png`.replace(/[^0-9a-f/.-]/g, "0");
     expect((await service.storage.from("resource-images").upload(victimPath, PNG_BYTES, { contentType: "image/png" })).error).toBeNull();
     const rec = await service.rpc("set_resource_image", { p_owner_id: other.id, p_resource_id: foreignId, p_path: victimPath });
     expect(rec.error).toBeNull();
@@ -586,14 +586,14 @@ test.describe("image upload edge cases (Phase 9 review carry-overs)", () => {
   // not delete each other's file). Old strays are swept; the delete of the resource takes everything.
   test("a young stray file survives an upload (race safety); the previous image is deleted at once; the delete takes all", async ({ page }) => {
     const { owner, ids } = await setup(page);
-    const stray = `${owner.id}/${ids[0]}/${crypto.randomUUID()}.png`;
+    const stray = `${ids[0]}/${crypto.randomUUID()}.png`;
     expect((await serviceClient().storage.from("resource-images").upload(stray, PNG_BYTES, { contentType: "image/png" })).error).toBeNull();
     await page.goto(`/dashboard/resources/${ids[0]}`);
     await page.getByLabel("Upload an image").setInputFiles(png());
     await page.getByRole("button", { name: "Upload image" }).click();
     await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
     const [first] = await storedResources(owner.id);
-    expect((await listResourceFiles(owner.id, ids[0])).sort(), "the young stray is still there").toEqual([first.image_path, stray].sort());
+    expect((await listResourceFiles(ids[0])).sort(), "the young stray is still there").toEqual([first.image_path, stray].sort());
 
     // A replace deletes the previous recorded image straight away (even though it is young)...
     await page.getByLabel("Replace the image").setInputFiles(png(PNG_BYTES_2, "second.png"));
@@ -601,12 +601,12 @@ test.describe("image upload edge cases (Phase 9 review carry-overs)", () => {
     await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
     await expect.poll(async () => (await storedResources(owner.id))[0].image_path).not.toBe(first.image_path);
     const [second] = await storedResources(owner.id);
-    await expect.poll(async () => (await listResourceFiles(owner.id, ids[0])).sort()).toEqual([second.image_path, stray].sort());
+    await expect.poll(async () => (await listResourceFiles(ids[0])).sort()).toEqual([second.image_path, stray].sort());
 
     // ...and deleting the resource removes everything, strays included.
     await page.getByRole("button", { name: "Delete resource Room 1" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Delete resource", exact: true }).click();
     await expect(page).toHaveURL(/notice=deleted/);
-    expect(await listResourceFiles(owner.id, ids[0])).toEqual([]);
+    expect(await listResourceFiles(ids[0])).toEqual([]);
   });
 });

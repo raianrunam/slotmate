@@ -78,24 +78,21 @@ test.describe('T14 rate limit', () => {
     expect(await attempt(a.workspaceId, other)).toBe(false)
   })
 
-  test('simultaneous attempts: never more than 5 are allowed', async () => {
-    // KNOWN DATABASE WEAKNESS (found in Phase 11, reported to the owner; fixing it needs a NEW migration,
-    // which is not authorised yet). check_rate_limit counts only COMMITTED attempts, and simultaneous calls
-    // cannot see each other's uncommitted rows, so a parallel burst can be allowed in full: the first run
-    // allowed 9 of 10, a later run allowed no more than 5. It depends on timing, so the test is SKIPPED
-    // (an expected-failure mark would flip between pass and fail). DATABASE.md 7.4 said both would be
-    // refused, which is wrong. A likely fix: an advisory lock on (workspace, ip_hash) at the start of the
-    // function. Remove the skip when that migration exists.
-    test.fixme(true, 'known weakness: parallel bursts can bypass the per-visitor limit (needs a new migration)')
+  test('simultaneous attempts: 20 at once allow exactly 5 (migration 8: an advisory lock per visitor and workspace)', async () => {
+    // Before migration 8 a parallel burst could be allowed in full (9 of 10 in one run), because
+    // simultaneous calls could not see each other's uncommitted rows. Now calls for one visitor and
+    // workspace run one after another, so exactly 5 are allowed and 15 refused.
     const ip = hash()
-    const results = await Promise.all(Array.from({ length: 10 }, () => service.rpc('check_rate_limit', { p_workspace_id: a.workspaceId, p_ip_hash: ip })))
+    const results = await Promise.all(Array.from({ length: 20 }, () => service.rpc('check_rate_limit', { p_workspace_id: a.workspaceId, p_ip_hash: ip })))
     for (const r of results) expect(r.error).toBeNull()
     const allowed = results.filter((r) => r.data === true).length
-    // At the exact boundary, two simultaneous attempts may each see the other's record and both be
-    // refused (DATABASE.md 7.4): that errs on the safe side. It must never allow MORE than 5.
-    expect(allowed).toBeLessThanOrEqual(5)
-    expect(allowed).toBeGreaterThanOrEqual(1)
+    expect(allowed, 'never more than 5 allowed').toBeLessThanOrEqual(5)
+    expect(allowed, 'and not fewer: the lock makes the count exact').toBe(5)
     expect(await attempt(a.workspaceId, ip), 'afterwards the visitor is refused').toBe(false)
+    // Another visitor, simultaneously, is not held up or counted.
+    const other = hash()
+    const both = await Promise.all([...Array.from({ length: 8 }, () => service.rpc('check_rate_limit', { p_workspace_id: a.workspaceId, p_ip_hash: ip })), service.rpc('check_rate_limit', { p_workspace_id: a.workspaceId, p_ip_hash: other })])
+    expect(both[8].data, 'another visitor is unaffected').toBe(true)
   })
 
   test('it never counts toward the owner monthly limit, and no booking is made', async () => {

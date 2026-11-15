@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { serviceClient } from "../db/helpers";
 import { addDaysToDate, todayInZone } from "../../src/lib/time/slots";
 import { LOGGED_OUT } from "./owner";
-import { cleanupOwners, newOwner, setPlan, tag, type TestOwner } from "./owners";
+import { cleanupOwners, newOwner, PNG_BYTES, setPlan, tag, type TestOwner } from "./owners";
 
 // Public booking (Phase 11: PUB-01 to PUB-07, NOTIF-01, NOTIF-03, SEC-06, D19, D21, D22).
 // Real paths only: a visitor is a browser with NO login; owners are real logged-in API
@@ -456,6 +456,11 @@ test("only today up to 90 days ahead can be chosen; times that already started a
 test("the page HTML holds no other visitor's details and no owner data; a booked time is not offered again", async ({ browser, baseURL }) => {
   const owner = await sharedOwner();
   const fx = await makeWorkspace(owner, [{ slot: 60, capacity: 4 }]);
+  // The resource HAS an image (Phase 11 review finding 2: the first version of this test had none, so it
+  // missed that the owner's id was part of the public image address).
+  const imagePath = `${fx.resources[0].id}/${crypto.randomUUID()}.png`;
+  expect((await serviceClient().storage.from("resource-images").upload(imagePath, PNG_BYTES, { contentType: "image/png" })).error).toBeNull();
+  expect((await serviceClient().rpc("set_resource_image", { p_owner_id: owner.id, p_resource_id: fx.resources[0].id, p_path: imagePath })).error).toBeNull();
   const a = await visitor(browser, baseURL!);
   const b = await visitor(browser, baseURL!);
   const secrets = {
@@ -492,6 +497,7 @@ test("the page HTML holds no other visitor's details and no owner data; a booked
     await expect(slotButton(b.page, "15:00")).toBeVisible();
     await expect(slotButton(b.page, "14:00")).toHaveCount(0); // taken by A (pending holds the slot, D10)
     const html = await (await b.context.request.get(`/book/${fx.slug}`)).text();
+    expect(html, "the page shows the image, by an address without the owner id").toContain(imagePath);
     for (const hidden of [secrets.name, secrets.email, secrets.phone, secrets.note, owner.email, owner.id, "visitor_email", "owner_id", "status_token"]) {
       expect(html, `page HTML: ${hidden}`).not.toContain(hidden);
       for (const body of bodies) expect(body, `server answers: ${hidden}`).not.toContain(hidden);

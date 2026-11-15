@@ -402,7 +402,7 @@ test.describe("another owner's workspace and forged fields (the server refuses) 
     const foreignId = await addWorkspace(victim, "Victim workspace", `victim-${tag()}`);
     // The victim's workspace holds a resource with an image file.
     const resourceId = await addResource(victim, foreignId, "Victim room");
-    const victimPath = `${victim.id}/${resourceId}/${crypto.randomUUID()}.png`;
+    const victimPath = `${resourceId}/${crypto.randomUUID()}.png`;
     const service = serviceClient();
     expect((await service.storage.from("resource-images").upload(victimPath, PNG_BYTES, { contentType: "image/png" })).error).toBeNull();
     expect((await service.rpc("set_resource_image", { p_owner_id: victim.id, p_resource_id: resourceId, p_path: victimPath })).error).toBeNull();

@@ -7,7 +7,7 @@ import { createTestUser, deleteTestUser, type TestUser } from "./owner";
 // the other UI tests would collide when tests run in parallel). Owners are made
 // through the Auth admin API (no email) and deleted afterwards. Because deleting
 // an owner does NOT delete their Storage files, cleanup also removes every file
-// under <owner_id>/ in the resource-images bucket.
+// under the folders of the owner's resources (<resource_id>/) in the resource-images bucket.
 
 export interface TestOwner extends TestUser {
   /** The owner's own logged-in API client (role authenticated, RLS applies). */
@@ -53,22 +53,28 @@ export async function logIn(page: Page, owner: TestOwner) {
 
 const BUCKET = "resource-images";
 
-/** All file paths under <ownerId>/ in the bucket (service_role read, test code only). */
+// Resource ids seen per owner. A deleted resource has no row any more, but its (now empty) folder
+// must still be checked, so every id ever seen for an owner is remembered here.
+const seenResources = new Map<string, Set<string>>();
+const remember = (ownerId: string, resourceId: string) => {
+  const set = seenResources.get(ownerId) ?? new Set<string>();
+  set.add(resourceId);
+  seenResources.set(ownerId, set);
+};
+
+/** All file paths in the folders of the owner's resources, existing or seen before (service_role read, test code only). */
 export async function listOwnerFiles(ownerId: string): Promise<string[]> {
-  const storage = serviceClient().storage.from(BUCKET);
-  const folders = await storage.list(ownerId, { limit: 100 });
+  const rows = await serviceClient().from("resources").select("id").eq("owner_id", ownerId);
+  for (const { id } of rows.data ?? []) remember(ownerId, id);
   const paths: string[] = [];
-  for (const folder of folders.data ?? []) {
-    const files = await storage.list(`${ownerId}/${folder.name}`, { limit: 100 });
-    for (const file of files.data ?? []) paths.push(`${ownerId}/${folder.name}/${file.name}`);
-  }
+  for (const id of seenResources.get(ownerId) ?? []) paths.push(...(await listResourceFiles(id)));
   return paths;
 }
 
 /** Files of ONE resource's folder. */
-export async function listResourceFiles(ownerId: string, resourceId: string): Promise<string[]> {
-  const files = await serviceClient().storage.from(BUCKET).list(`${ownerId}/${resourceId}`, { limit: 100 });
-  return (files.data ?? []).map((f) => `${ownerId}/${resourceId}/${f.name}`);
+export async function listResourceFiles(resourceId: string): Promise<string[]> {
+  const files = await serviceClient().storage.from(BUCKET).list(resourceId, { limit: 100 });
+  return (files.data ?? []).map((f) => `${resourceId}/${f.name}`);
 }
 
 /** Call from afterAll: removes the files, then the owners. */
@@ -78,7 +84,7 @@ export async function cleanupOwners(): Promise<void> {
     const files = await listOwnerFiles(id);
     if (files.length > 0) await storage.remove(files);
   }
-  for (const id of createdIds) await deleteTestUser(id);
+  for (const id of createdIds) await deleteTestUser(id); // also records and clears the owner's resource folders
   createdIds.length = 0;
 }
 
@@ -99,6 +105,7 @@ export async function addResource(owner: TestOwner, workspaceId: string, name: s
     .select("id")
     .single();
   if (error) throw new Error(`test resource insert failed: ${error.message}`);
+  remember(owner.id, data.id);
   return data.id;
 }
 

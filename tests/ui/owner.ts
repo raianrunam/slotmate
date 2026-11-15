@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { recordTestUserId, serviceClient } from "../db/helpers";
+import { forgetOwnerFiles, recordTestUserId, serviceClient } from "../db/helpers";
 
 // Throw-away owners for the UI tests. They are created through the Auth admin
 // API (no email is sent: A20) and their addresses start with "slotmate-test-"
@@ -44,6 +44,7 @@ export async function createTestUser(options: { confirmed?: boolean } = {}): Pro
 }
 
 export async function deleteTestUser(id: string): Promise<void> {
+  await forgetOwnerFiles(id); // files live under the resource ids; record them and remove the files first
   const { error } = await serviceClient().auth.admin.deleteUser(id);
   if (error && !/not found/i.test(error.message)) {
     throw new Error(`auth.admin.deleteUser failed: ${error.message}`);
