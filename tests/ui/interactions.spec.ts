@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { SCREENSHOT_DIR } from "./helpers";
+import { OWNER_STATE } from "./owner";
 
 // Keyboard and interaction checks for the shared pieces: skip link, theme
 // toggle, mobile menu, breakpoints, dialogs, pagination.
@@ -83,6 +84,8 @@ test.describe("keyboard and theme", () => {
 });
 
 test.describe("dashboard navigation", () => {
+  // The dashboard needs a login (Phase 7): use the saved test-owner session.
+  test.use({ storageState: OWNER_STATE });
   test("phone: the sidebar is hidden and the menu opens a sheet that closes on navigation", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto("/dashboard");
@@ -141,6 +144,47 @@ test.describe("dashboard navigation", () => {
 });
 
 test.describe("shared components", () => {
+  test("a dialog traps keyboard focus until it is closed", async ({ page }) => {
+    await page.goto("/design");
+    await page.getByRole("button", { name: "Open a dialog" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    for (let i = 0; i < 6; i++) {
+      await page.keyboard.press("Tab");
+      const inside = await page.evaluate(
+        () => document.activeElement?.closest("[role=dialog]") !== null,
+      );
+      expect(inside, "focus stays inside the dialog").toBe(true);
+    }
+  });
+
+  test("the booking status page is hidden from search engines and does not leak its address", async ({ page }) => {
+    await page.goto("/booking/sample-code");
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
+    await expect(page.locator('meta[name="referrer"]')).toHaveAttribute("content", "no-referrer");
+  });
+
+  test("the form fields connect labels, hints and errors", async ({ page }) => {
+    await page.goto("/design");
+    const email = page.getByLabel("Email", { exact: true });
+    await expect(email).toHaveAttribute("aria-invalid", "true");
+    await expect(email).toHaveAttribute("aria-describedby", "d-email-error");
+    await expect(page.locator("#d-email-error")).toHaveText("Enter a valid email address.");
+  });
+
+  test("form control borders are dark enough to see (about 3:1 or more)", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.goto("/login");
+    const border = await page.getByLabel("Email").evaluate((el) => getComputedStyle(el).borderTopColor);
+    // rgb(r, g, b): require a mid-grey or darker (each channel below about 150).
+    const channels = border.match(/\d+(\.\d+)?/g)!.slice(0, 3).map(Number);
+    expect(Math.max(...channels), `input border colour ${border} is too light`).toBeLessThan(150);
+  });
+});
+
+test.describe("shared components (logged in)", () => {
+  test.use({ storageState: OWNER_STATE });
+
   test("a permanent delete asks for confirmation; Cancel and Escape close it and focus returns", async ({ page }) => {
     await page.goto("/dashboard/workspaces");
     const trigger = page.getByRole("button", { name: "Delete" });
@@ -158,20 +202,6 @@ test.describe("shared components", () => {
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(trigger).toBeFocused();
-  });
-
-  test("a dialog traps keyboard focus until it is closed", async ({ page }) => {
-    await page.goto("/design");
-    await page.getByRole("button", { name: "Open a dialog" }).click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toBeVisible();
-    for (let i = 0; i < 6; i++) {
-      await page.keyboard.press("Tab");
-      const inside = await page.evaluate(
-        () => document.activeElement?.closest("[role=dialog]") !== null,
-      );
-      expect(inside, "focus stays inside the dialog").toBe(true);
-    }
   });
 
   test("the account menu works with the keyboard", async ({ page }) => {
@@ -204,26 +234,4 @@ test.describe("shared components", () => {
     await expect(page.getByText("Meeting room · Tue 10:00").first()).toBeVisible();
   });
 
-  test("the booking status page is hidden from search engines and does not leak its address", async ({ page }) => {
-    await page.goto("/booking/sample-code");
-    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
-    await expect(page.locator('meta[name="referrer"]')).toHaveAttribute("content", "no-referrer");
-  });
-
-  test("the form fields connect labels, hints and errors", async ({ page }) => {
-    await page.goto("/design");
-    const email = page.getByLabel("Email", { exact: true });
-    await expect(email).toHaveAttribute("aria-invalid", "true");
-    await expect(email).toHaveAttribute("aria-describedby", "d-email-error");
-    await expect(page.locator("#d-email-error")).toHaveText("Enter a valid email address.");
-  });
-
-  test("form control borders are dark enough to see (about 3:1 or more)", async ({ page }) => {
-    await page.emulateMedia({ colorScheme: "light" });
-    await page.goto("/login");
-    const border = await page.getByLabel("Email").evaluate((el) => getComputedStyle(el).borderTopColor);
-    // rgb(r, g, b): require a mid-grey or darker (each channel below about 150).
-    const channels = border.match(/\d+(\.\d+)?/g)!.slice(0, 3).map(Number);
-    expect(Math.max(...channels), `input border colour ${border} is too light`).toBeLessThan(150);
-  });
 });

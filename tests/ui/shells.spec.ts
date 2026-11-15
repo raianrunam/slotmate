@@ -2,7 +2,12 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { SCREENSHOT_DIR } from "./helpers";
+import { LOGGED_OUT, OWNER_STATE } from "./owner";
 
+// Phase 7: the dashboard pages and /reset-password need a login, so they run with
+// the saved session of a throw-away test owner (see global-setup.ts); every other
+// page runs with nobody logged in.
+//
 // Opens every shell page at the three tested widths (decision D22: 375 px phone,
 // 768 px tablet, 1280 px desktop) and checks the basics:
 //  - the page answers with the expected status,
@@ -153,25 +158,33 @@ async function checkPage(
   expect(problems, "console and page errors").toEqual([]);
 }
 
-test.describe("shells, light theme", () => {
-  test.use({ colorScheme: "light" });
-  for (const route of ROUTES) {
-    for (const { width, height } of WIDTHS) {
-      test(`${route.name} at ${width}px`, async ({ page }) => {
-        await checkPage(page, route, width, height, "");
-      });
-    }
-  }
-});
+// Pages that need the logged-in owner (the reset form needs the short session
+// the emailed link creates; any session shows the form).
+const needsOwner = (r: ShellRoute) =>
+  r.path.startsWith("/dashboard") || r.path === "/reset-password";
 
-test.describe("shells, dark theme", () => {
-  test.use({ colorScheme: "dark" });
-  for (const route of ROUTES.filter((r) => DARK_ROUTES.includes(r.name))) {
-    for (const { width, height } of [WIDTHS[0], WIDTHS[2]]) {
-      test(`${route.name} at ${width}px (dark)`, async ({ page }) => {
-        await checkPage(page, route, width, height, "-dark");
-        await expect(page.locator("html"), "dark class on <html>").toHaveClass(/dark/);
-      });
+for (const loggedIn of [false, true]) {
+  const suffix = loggedIn ? " (logged in)" : "";
+  test.describe(`shells, light theme${suffix}`, () => {
+    test.use({ colorScheme: "light", storageState: loggedIn ? OWNER_STATE : LOGGED_OUT });
+    for (const route of ROUTES.filter((r) => needsOwner(r) === loggedIn)) {
+      for (const { width, height } of WIDTHS) {
+        test(`${route.name} at ${width}px`, async ({ page }) => {
+          await checkPage(page, route, width, height, "");
+        });
+      }
     }
-  }
-});
+  });
+
+  test.describe(`shells, dark theme${suffix}`, () => {
+    test.use({ colorScheme: "dark", storageState: loggedIn ? OWNER_STATE : LOGGED_OUT });
+    for (const route of ROUTES.filter((r) => DARK_ROUTES.includes(r.name) && needsOwner(r) === loggedIn)) {
+      for (const { width, height } of [WIDTHS[0], WIDTHS[2]]) {
+        test(`${route.name} at ${width}px (dark)`, async ({ page }) => {
+          await checkPage(page, route, width, height, "-dark");
+          await expect(page.locator("html"), "dark class on <html>").toHaveClass(/dark/);
+        });
+      }
+    }
+  });
+}
