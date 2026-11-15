@@ -12,6 +12,9 @@ import { clientAddress, keyedHash } from "@/lib/rate-limit-hash";
 //  * This file does not import the admin connection: the caller passes in the
 //    function that talks to the database.
 
+/** A short secret plus a leaked table would allow guessing internet addresses (Phase 16 LOW-1). */
+export const MIN_SECRET_LENGTH = 32;
+
 export type RateLimitCheck = (
   workspaceId: string,
   ipHash: string,
@@ -24,8 +27,8 @@ export async function checkRate(
   headers: Pick<Headers, "get">,
 ): Promise<"allowed" | "refused" | "failed"> {
   const secret = process.env.RATE_LIMIT_SECRET;
-  if (!secret) {
-    console.error("RATE_LIMIT_SECRET is not set"); // the name only
+  if (!secret || secret.length < MIN_SECRET_LENGTH) {
+    console.error(secret ? "RATE_LIMIT_SECRET is too short" : "RATE_LIMIT_SECRET is not set"); // the name only, never the value
     return "failed";
   }
   const result = await check(workspaceId, keyedHash(secret, clientAddress(headers)));
