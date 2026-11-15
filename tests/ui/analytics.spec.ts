@@ -106,8 +106,9 @@ test.describe("Free owner", () => {
       const daily = page.getByTestId("table-daily");
       await daily.locator("summary").click();
       await expect(daily.locator("tbody tr")).toHaveCount(30);
-      await expect(daily.locator("tbody tr").last()).toContainText("3");
-      await expect(daily.locator("tbody tr").first()).toContainText("0");
+      // The COUNT cell (the last one) of the last row is exactly 3 and of the first row exactly 0 (a date such as "2026" must not satisfy this).
+      await expect(daily.locator("tbody tr").last().locator("td").last()).toHaveText("3");
+      await expect(daily.locator("tbody tr").first().locator("td").last()).toHaveText("0");
       await expect(page.getByTestId("table-status")).toContainText("Approved (33%)");
 
       // The Pro areas are locked: an upgrade prompt, and no Pro chart or table anywhere.
@@ -168,14 +169,18 @@ test.describe("Pro owner", () => {
     const owner = await newOwner();
     await setPlan(owner.id, "pro");
     const fx = await makeWorkspace(owner);
-    const second = await addResource(owner, fx.workspaceId, `Quiet ${tag()}`);
+    const quietName = `Quiet ${tag()}`;
+    await addResource(owner, fx.workspaceId, quietName);
     try {
       await threeBookings(owner, fx);
       await logIn(page, owner);
       await page.goto("/dashboard/analytics");
       await expect(total(page, "all")).toHaveText("3");
       await expect(page.getByTestId("chart-monthly")).toBeVisible();
-      await expect(page.getByTestId("table-monthly")).toContainText("3");
+      // The monthly counts (last cell of each row) add up to the 3 requests, whatever the number of months shown.
+      const monthly = await page.getByTestId("table-monthly").locator("tbody tr td:last-child").allTextContents();
+      expect(monthly.length).toBeGreaterThanOrEqual(1);
+      expect(monthly.reduce((sum, t) => sum + Number(t.trim()), 0)).toBe(3);
       await expect(page.getByTestId("locked-monthly")).toHaveCount(0);
       const usage = page.getByTestId("chart-resources");
       await expect(usage).toBeVisible();
@@ -183,8 +188,9 @@ test.describe("Pro owner", () => {
       const rows = usage.locator("tbody tr");
       await expect(rows).toHaveCount(2);
       await expect(rows.first()).toContainText(fx.resourceName);
-      await expect(rows.first()).toContainText("3");
-      expect(second).toBeTruthy();
+      await expect(rows.first().locator("td").last()).toHaveText("3");
+      await expect(rows.nth(1)).toContainText(quietName); // a resource with no requests is listed too, after the busy one
+      await expect(rows.nth(1).locator("td").last()).toHaveText("0");
 
       // A range in the past with no requests: zero totals and the "no data" message.
       await page.getByLabel("From", { exact: true }).fill(day(-20));

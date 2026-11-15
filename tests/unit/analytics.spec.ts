@@ -11,11 +11,13 @@ import {
   parseRange,
   parseWorkspaceParam,
   pickWorkspace,
+  collectPages,
   rangeBounds,
   resourceUsage,
   statusTotals,
   type AnalyticsAccess,
 } from "../../src/features/analytics/aggregate";
+import { addDaysToDate } from "../../src/lib/time/slots";
 
 // Phase 13: analytics maths (pure), the Pro gate, and source guards (ANLT-01 to ANLT-06, A12, DB7, Q12).
 
@@ -104,6 +106,62 @@ test.describe("range bounds as instants", () => {
     const b = rangeBounds({ from: "2026-11-14", to: "2026-11-15" }, "Asia/Dhaka");
     expect(b.from.toISOString()).toBe("2026-11-13T18:00:00.000Z");
     expect(b.until.toISOString()).toBe("2026-11-15T18:00:00.000Z");
+  });
+});
+
+test.describe("range bounds are exact: no gap and no overlap between neighbouring ranges (Phase 13 review)", () => {
+  test("the end of one day is the start of the next, in every zone, including the 23-hour and 25-hour days", () => {
+    for (const zone of ["UTC", "Asia/Dhaka", "America/New_York", "Europe/London", "Australia/Lord_Howe", "Asia/Kolkata"]) {
+      for (const day of ["2026-03-07", "2026-03-08", "2026-03-28", "2026-03-29", "2026-10-24", "2026-10-25", "2026-11-01", "2026-11-14"]) {
+        const next = addDaysToDate(day, 1);
+        const a = rangeBounds({ from: day, to: day }, zone);
+        const b = rangeBounds({ from: next, to: next }, zone);
+        expect(a.until.getTime(), `${zone} ${day}: the day ends exactly where the next one starts`).toBe(b.from.getTime());
+        expect(a.until.getTime() - a.from.getTime(), `${zone} ${day}: a day is 23, 24 or 25 hours (or 23.5 / 24.5 at Lord Howe)`).toBeGreaterThanOrEqual(23 * 3_600_000);
+        expect(a.until.getTime() - a.from.getTime()).toBeLessThanOrEqual(25 * 3_600_000);
+      }
+    }
+    // A booking made exactly at the end instant belongs to the NEXT day (the upper bound is exclusive).
+    const b = rangeBounds({ from: "2026-11-14", to: "2026-11-14" }, "Asia/Dhaka");
+    expect(dailySeries([b.until.toISOString()], "Asia/Dhaka", { from: "2026-11-14", to: "2026-11-15" }).map((d) => d.count)).toEqual([0, 1]);
+    expect(dailySeries([b.from.toISOString()], "Asia/Dhaka", { from: "2026-11-14", to: "2026-11-15" }).map((d) => d.count)).toEqual([1, 0]);
+  });
+});
+
+test.describe("paging (Phase 13 review: a lower host page size must not undercount silently)", () => {
+  const data = Array.from({ length: 2500 }, (_, i) => i);
+  const server = (limit: number) => {
+    const calls: number[] = [];
+    return { calls, fetch: async (offset: number) => (calls.push(offset), data.slice(offset, offset + limit)) };
+  };
+  test("collects everything whatever the page size the host really uses (1000, 500, 7)", async () => {
+    for (const limit of [1000, 500, 7]) {
+      const s = server(limit);
+      const result = await collectPages(s.fetch, 2500, 20_000);
+      expect(result.rows, `limit ${limit}`).toHaveLength(2500);
+      expect(result.rows[0]).toBe(0);
+      expect(result.rows[2499]).toBe(2499);
+      expect(new Set(result.rows).size, "no row twice").toBe(2500);
+      expect(result.truncated).toBe(false);
+      expect(s.calls[0]).toBe(0);
+      expect(s.calls[1]).toBe(limit); // the next page starts after the rows received
+    }
+  });
+  test("stops at the cap and says so; an exact total at the cap is not truncated", async () => {
+    const capped = await collectPages(server(1000).fetch, 2500, 2000);
+    expect(capped.rows).toHaveLength(2000);
+    expect(capped.truncated).toBe(true);
+    const exact = await collectPages(server(1000).fetch, 2000, 2000);
+    expect(exact.rows).toHaveLength(2000);
+    expect(exact.truncated).toBe(false);
+  });
+  test("an empty page before the total is reached is reported as truncated, never as complete; no rows means no calls", async () => {
+    const short = await collectPages(async (offset) => data.slice(offset, offset + 100).filter((n) => n < 250), 400, 20_000);
+    expect(short.rows).toHaveLength(250);
+    expect(short.truncated).toBe(true);
+    const s = server(1000);
+    expect(await collectPages(s.fetch, 0, 20_000)).toEqual({ rows: [], truncated: false });
+    expect(s.calls).toEqual([]);
   });
 });
 

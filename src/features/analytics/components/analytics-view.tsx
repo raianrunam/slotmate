@@ -200,7 +200,7 @@ export function AnalyticsView({
         </Section>
 
         {data.monthly ? (
-          <Section testId="chart-monthly" title="Requests per month" description="Booking requests received in each calendar month of the period.">
+          <Section testId="chart-monthly" title="Requests per month" description="Booking requests received in each calendar month of the period. The first and the last month can be partial: only the days inside the period are counted, so a short bar does not always mean a quiet month.">
             {empty ? (
               <NoData text="No data yet." />
             ) : (

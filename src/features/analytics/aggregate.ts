@@ -112,6 +112,27 @@ export function rangeBounds(range: DateRange, timeZone: string): { from: Date; u
 }
 
 // ---------------------------------------------------------------------------
+// Paging (pure, so the loop can be tested without a database)
+// ---------------------------------------------------------------------------
+
+/**
+ * Reads rows page by page until `total` rows are collected. The next page starts after the rows actually RECEIVED (not after
+ * a page size assumed in advance), so a host that returns fewer rows per request than asked (a lower max-rows setting) still
+ * gives every row. Stops with `truncated: true` if it reaches `maxRows` or gets an empty page before `total`, so a partial
+ * result is never presented as complete (Phase 13 review).
+ */
+export async function collectPages<T>(fetchPage: (offset: number) => Promise<T[]>, total: number, maxRows: number): Promise<{ rows: T[]; truncated: boolean }> {
+  const rows: T[] = [];
+  while (rows.length < total) {
+    if (rows.length >= maxRows) return { rows, truncated: true };
+    const page = await fetchPage(rows.length);
+    if (page.length === 0) return { rows, truncated: true };
+    rows.push(...page);
+  }
+  return { rows, truncated: false };
+}
+
+// ---------------------------------------------------------------------------
 // Aggregation
 // ---------------------------------------------------------------------------
 

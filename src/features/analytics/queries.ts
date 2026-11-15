@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   analyticsAccess,
   buildAnalytics,
+  collectPages,
   rangeBounds,
   type AnalyticsAccess,
   type AnalyticsData,
@@ -71,30 +72,40 @@ export async function getAnalytics(input: {
   const bounds = rangeBounds(range, workspace.timeZone);
   const columns = access.resources ? "status, created_at, resource_id, resources!inner(workspace_id)" : "status, created_at, resources!inner(workspace_id)";
 
-  const facts: BookingFact[] = [];
-  let truncated = false;
-  for (let page = 0; ; page++) {
-    if (page >= MAX_PAGES) {
-      truncated = true;
-      break;
-    }
-    const res = await supabase
-      .from("bookings")
-      .select(columns)
-      .eq("resources.workspace_id", workspace.id)
-      .gte("created_at", bounds.from.toISOString())
-      .lt("created_at", bounds.until.toISOString())
-      .order("created_at", { ascending: true })
-      .order("id", { ascending: true })
-      .range(page * PAGE, page * PAGE + PAGE - 1);
-    if (res.error) {
-      console.error("getAnalytics bookings failed", { code: res.error.code });
-      throw new Error("Could not load your analytics.");
-    }
-    const rows = (res.data ?? []) as unknown as { status: string; created_at: string; resource_id?: string }[];
-    for (const r of rows) facts.push({ status: r.status, createdAt: r.created_at, resourceId: r.resource_id });
-    if (rows.length < PAGE) break;
+  // How many rows the range holds (an exact count), then the rows page by page. The same filters in both.
+  const counted = await supabase
+    .from("bookings")
+    .select("id, resources!inner(workspace_id)", { count: "exact", head: true })
+    .eq("resources.workspace_id", workspace.id)
+    .gte("created_at", bounds.from.toISOString())
+    .lt("created_at", bounds.until.toISOString());
+  if (counted.error) {
+    console.error("getAnalytics count failed", { code: counted.error.code });
+    throw new Error("Could not load your analytics.");
   }
+  const collected = await collectPages<BookingFact>(
+    async (offset) => {
+      const res = await supabase
+        .from("bookings")
+        .select(columns)
+        .eq("resources.workspace_id", workspace.id)
+        .gte("created_at", bounds.from.toISOString())
+        .lt("created_at", bounds.until.toISOString())
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(offset, offset + PAGE - 1);
+      if (res.error) {
+        console.error("getAnalytics bookings failed", { code: res.error.code });
+        throw new Error("Could not load your analytics.");
+      }
+      const rows = (res.data ?? []) as unknown as { status: string; created_at: string; resource_id?: string }[];
+      return rows.map((r) => ({ status: r.status, createdAt: r.created_at, resourceId: r.resource_id }));
+    },
+    counted.count ?? 0,
+    MAX_PAGES * PAGE,
+  );
+  const facts = collected.rows;
+  const truncated = collected.truncated;
 
   let resources: { id: string; name: string }[] = [];
   if (access.resources) {
