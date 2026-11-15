@@ -1,56 +1,54 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import { AuthCard } from "@/components/auth-card";
-import { FormField } from "@/components/form-field";
-import { PlaceholderNotice } from "@/components/placeholder-notice";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { LoginForm } from "@/features/auth/components/login-form";
+import { first, PageNotices } from "@/features/auth/components/page-notices";
+import { safeNext } from "@/lib/safe-redirect";
 
 export const metadata: Metadata = { title: "Log in" };
 
-// Shell only: no login logic yet (Phase 7). The button is disabled on purpose.
-export default function LoginPage() {
+type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
+
+const linkClass =
+  "rounded-sm font-medium text-primary underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+// The address (?notice=, ?error=, ?next=) is read inside <Suspense> because it
+// is request data (Cache Components).
+async function LoginContent({ searchParams }: { searchParams: SearchParams }) {
+  const params = await searchParams;
+  const rawNext = first(params.next);
+  // Only a safe same-site dashboard path is passed on; otherwise nothing.
+  const next = rawNext ? safeNext(rawNext) : undefined;
   return (
-    <>
-      <AuthCard
-        title="Log in"
-        description="Welcome back. Log in to manage your bookings."
-        footer={
-          <>
-            <span>New to SlotMate?</span>
-            <Link href="/signup" className="rounded-sm font-medium text-primary underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              Create an account
-            </Link>
-          </>
-        }
+    <AuthCard
+      title="Log in"
+      description="Welcome back. Log in to manage your bookings."
+      footer={
+        <>
+          <span>New to SlotMate?</span>
+          <Link href="/signup" className={linkClass}>
+            Create an account
+          </Link>
+        </>
+      }
+    >
+      <PageNotices params={params} />
+      <LoginForm next={next} />
+      <Link
+        href="/forgot-password"
+        className="justify-self-center rounded-sm text-sm text-muted-foreground underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <form className="grid gap-4" noValidate>
-          <FormField id="login-email" label="Email">
-            {(props) => (
-              <Input {...props} name="email" type="email" autoComplete="email" className="h-10 text-base md:text-sm" />
-            )}
-          </FormField>
-          <FormField id="login-password" label="Password">
-            {(props) => (
-              <Input {...props} name="password" type="password" autoComplete="current-password" className="h-10 text-base md:text-sm" />
-            )}
-          </FormField>
-          <Button type="submit" className="h-10" disabled>
-            Log in
-          </Button>
-        </form>
-        <Link
-          href="/forgot-password"
-          className="justify-self-center rounded-sm text-sm text-muted-foreground underline underline-offset-4 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          Forgot your password?
-        </Link>
-      </AuthCard>
-      <div className="w-full max-w-md">
-        <PlaceholderNotice phase="Phase 7">
-          Authentication is not built yet, so this form does nothing.
-        </PlaceholderNotice>
-      </div>
-    </>
+        Forgot your password?
+      </Link>
+    </AuthCard>
+  );
+}
+
+export default function LoginPage({ searchParams }: { searchParams: SearchParams }) {
+  return (
+    <Suspense fallback={<AuthCard title="Log in"><div className="h-48" /></AuthCard>}>
+      <LoginContent searchParams={searchParams} />
+    </Suspense>
   );
 }
