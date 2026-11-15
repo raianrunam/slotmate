@@ -107,7 +107,7 @@ T1 to T21 are defined in `docs/DATABASE.md` section 10. Status as of 2026-11-14:
 
 ## 6. User-interface tests (Phase 6)
 
-Run: `npm run test:ui` (config: `playwright.ui.config.ts`, tests: `tests/ui/`). The first time, install the browser with `npx playwright install chromium`. The config builds the app and starts it on port 3100 (it refuses to reuse something already on that port), so no database, secrets or `.env.local` are needed. The database tests (`npm run test:db`) are separate and unchanged.
+Run: `npm run test:ui` (config: `playwright.ui.config.ts`, tests: `tests/ui/`). The first time, install the browser with `npx playwright install chromium`. The config builds the app and starts it on port 3100 (it refuses to reuse something already on that port). **Since Phase 7 it also needs `.env.local`** (the app needs its Supabase settings, and the tests create throw-away owners; see section 6a). The database tests (`npm run test:db`) are separate and unchanged.
 
 Status on 2026-11-14: 88 checks pass. What they check:
 
@@ -115,7 +115,23 @@ Status on 2026-11-14: 88 checks pass. What they check:
 - **Interactions:** the skip link is hidden until focused and then visible and readable; a focus ring is drawn on a focused link; the theme menu shows the current choice and switches dark and light; the dashboard shows the sidebar from 1024 px and the menu button below that (768, 1023, 1024, 1280 px); the mobile menu opens, closes on navigation and on Escape and returns focus; the delete confirmation (Cancel and Escape, focus returns); a dialog keeps focus inside; the account menu works by keyboard; pagination shows 20 per page; the phone bookings list shows the time; the Free and Pro limits on the landing page are exactly 1/3/100 and 5/25/1000 with $9.99; the two plan buttons line up; form control borders are dark enough.
 - **Screenshots** of every page and width are saved outside the repository, to `<home>/slotmate-notes/screenshots` (or the folder in the environment variable `SLOTMATE_SCREENSHOT_DIR`).
 
-Known limits of the UI tests: there is no automatic contrast measurement or axe-core scan (that would be a new package, so contrast is checked from the colour tokens in review); the overflow check looks at the whole page, not at content clipped inside a scroll box; the forms and buttons are placeholders, so nothing here tests real behaviour yet; real screen-reader behaviour is not tested.
+Known limits of the UI tests: there is no automatic contrast measurement or axe-core scan (that would be a new package, so contrast is checked from the colour tokens in review); the overflow check looks at the whole page, not at content clipped inside a scroll box; the booking, resource and analytics screens are still placeholders; real screen-reader behaviour is not tested.
+
+### 6a. Authentication tests (Phase 7)
+
+Status on 2026-11-15: 73 unit checks, 129 UI checks (88 from Phase 6 plus the new ones) and the 19 database tests pass.
+
+**Rules.** Automated tests never send a real email (A20). Owners are made with `auth.admin.createUser` (email already confirmed, or not confirmed for one test), and email links are made with `auth.admin.generateLink`, which only returns the link. Every test address starts with `slotmate-test-` and ends with `@example.com`; a sweep at the end deletes any left behind. The only address that reaches Supabase's email system is a made-up one in the forgot-password test (it has no account, so nothing is sent), plus one sign-up for an address that already has an account (no email is sent for it).
+
+**Unit tests** (`npm run test:unit`, `tests/unit/`): the zod rules (7 characters refused, 8 and 72 accepted, 73 refused, bad emails, trimming and lower-casing, matching passwords); `safeNext` against about 30 attack strings (`//evil.com`, `/\\evil.com`, encoded slashes, `javascript:`, newlines, `@`, `..`, lookalike prefixes, very long, non-strings); the email-link helpers (fixed destinations, unknown types refused); and source-code guards: every dashboard page contains `<OwnerGate` or `await requireOwner(`, no browser Supabase client exists, no `"use client"` file imports Supabase or a server-only module, the secret-key name never appears under `src/`, the only Route Handler is `/auth/confirm`, and logs contain only error codes.
+
+**UI tests** (`tests/ui/auth.spec.ts`): logged-out visitors are redirected from every dashboard page to `/login?next=`; a made-up cookie does not open the dashboard; login with an admin-created owner shows the email in the header and survives a reload; the login cookies are `httpOnly`, `SameSite=Lax` and invisible to `document.cookie`; dashboard responses are `no-store`; login lands on the requested page; a wrong password and an unknown email give the identical message; an unconfirmed owner is told to confirm; log out ends the session (the dashboard redirects again and Back shows no dashboard); a logged-in owner is moved off `/login` and `/signup`; seven open-redirect attempts in `?next=` all land on `/dashboard`; a 7-character password and an invalid email are refused and no account is created; the forgot-password message is the same for an address that does not exist, and its marker cookie is `httpOnly`; sign-up for an existing address shows the same message; `/auth/confirm` with no parameters, an unknown type, a bad token, a bad PKCE code or an error from Supabase goes to `/login?error=link`, and the link cannot choose where to go; a recovery link (from `generateLink`) opens the reset form, short and mismatching passwords are refused, the new password works, the old one does not, and the used link is refused; `/reset-password` without a session is refused; an ordinary login session cannot use the reset form; resetting the password ends the owner's other browser session; a sign-up link confirms the account and opens the dashboard; and the security headers (no framing, `nosniff`, referrer policy) are on every page except `/embed/*`. The Phase 6 dashboard checks now run with the saved session of a test owner created once at the start (`tests/ui/global-setup.ts`), and `/reset-password` runs with that session plus the marker cookie.
+
+**Bundle check** (`tests/ui/bundles.spec.ts`): after the production build, no file the browser can download (`.next/static`) contains the secret key's value (read from the environment, never printed; only file names are reported), the text `SUPABASE_SECRET_KEY`, `service_role` or `sb_secret_`, the server-only guard text, or Supabase's client code.
+
+**Not automated, and why.** (1) The PKCE `?code=` link of a real email: it needs a code verifier created in a real browser by a real sign-up or reset request, which needs a real inbox and Supabase's limited email sending. The automated tests exercise the token form of the same landing route, and a bad PKCE code (rejected because the verifier is missing). One manual check by the project owner covers the real path (README, "Real-inbox check" steps in the final report of Phase 7). (2) Email scanners that open links before the owner does. (3) Timing differences between known and unknown addresses. (4) Supabase's own rate limits.
+
+**Cleanup.** The UI run deletes its owners in `afterAll` and in a global teardown that also sweeps any `slotmate-test-` user. The leftover count was not checked separately by an extra script (it was blocked as an unauthorized use of the secret key); the sweep and the tests passing are the evidence.
 
 ### Breakpoints for later UI tests
 
@@ -129,5 +145,6 @@ The public booking page and the widget must work fully at 375 px. Those tests li
 
 ## 7. Change history
 
+- **2026-11-15 (Phase 7)** — Added section 6a: unit tests (`npm run test:unit`), authentication UI tests, the client-bundle check, and the rule that the UI tests now need `.env.local`.
 - **2026-11-14** — Created (Phase 5). Documents the database tests T1–T8 and T19, which were written and run on this date.
 - **2026-11-14 (Phase 6)** — Added the user-interface tests (`npm run test:ui`, 88 checks) and the Node 22 requirement.

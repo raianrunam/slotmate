@@ -72,7 +72,7 @@ Read more:
 - **Phase 4** Design the database and relationships: done. Seven migrations are applied to the development project; 9 of the 21 designed tests (T1–T8 and T19, run as 19 Playwright test cases) pass.
 - **Phase 5** Create `CLAUDE.md` and project documentation: done
 - **Phase 6** Design the frontend and reusable UI components: done. Design tokens (light and dark), shadcn/ui components and placeholder page shells; 88 UI checks pass at 375, 768 and 1280 px.
-- **Phase 7** Authentication: planned
+- **Phase 7** Authentication: built and tested (sign up, log in, log out, forgot and reset password, protected dashboard). 73 unit checks, 129 UI checks and the 19 database tests pass. One manual check with a real inbox is still to be done by the project owner (see below).
 - **Phase 8** Workspace management: planned
 - **Phase 9** Resource management: planned
 - **Phase 10** Availability management: planned
@@ -111,7 +111,7 @@ These steps set up your own copy against your own Supabase project. Do them **in
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`: Project Settings > API Keys. The secret key bypasses all security rules: keep it server-side only.
    - `NEXT_PUBLIC_APP_URL`: `http://localhost:3000` while developing.
    - `RATE_LIMIT_SECRET`: any long random string, for example from `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
-   - `.env.example` currently contains only the three Supabase variables above. `NEXT_PUBLIC_APP_URL` and `RATE_LIMIT_SECRET` are not in the template yet: add them to your `.env.local` when a phase needs them. The `STRIPE_*` variables are only needed from Phase 15.
+   - `.env.example` now contains the four variables above. `RATE_LIMIT_SECRET` is not in the template yet: add it to your `.env.local` when a phase needs it. The `STRIPE_*` variables are only needed from Phase 15.
 
    The full list of names and what each is for: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 7.
 
@@ -142,14 +142,29 @@ These steps set up your own copy against your own Supabase project. Do them **in
 7. **Run the checks.**
 
    ```powershell
+   npm run test:unit
+   npm run test:ui
    npm run test:db
    npx tsc --noEmit
    npx eslint
    ```
 
+   `npm run test:ui` (first time: `npx playwright install chromium`) builds the app and now also needs `.env.local`: it creates throw-away test owners (`slotmate-test-...@example.com`) through the Supabase admin interface, which sends no email, and deletes them afterwards.
+
    `npm run test:db` creates and deletes real test users in the Supabase project that `.env.local` points to, so use a development project. Two of its tests (T6 and T7) also call the Supabase CLI, so they need the login and link from step 4 and the migrations from step 5. No browser download is needed. See [`docs/TESTING.md`](docs/TESTING.md).
 
-Authentication settings in the Supabase dashboard (site URL, redirect URLs, email confirmation) are configured in Phase 7 and will be documented here then.
+### Supabase authentication settings (Phase 7)
+
+Set these once in your Supabase dashboard (Authentication). Nothing in the repository changes them.
+
+- **Email confirmation** (Sign In / Providers > Email): on. Sign-ups must confirm their address before they can log in.
+- **Minimum password length** (same page): 8.
+- **Site URL**: `http://localhost:3000` for development.
+- **Redirect URLs** (URL Configuration): `http://localhost:3000/**`. The sign-up and reset emails send the visitor to `/auth/confirm` on this address.
+- **Email templates**: leave the defaults. Editing templates needs your own email (SMTP) server, so SlotMate uses Supabase's default email links with the PKCE flow. **A link must be opened in the same browser that asked for it** (the sign-up or the reset request). Opening it on another device or in another browser shows "This link is invalid or has expired".
+- **Secure password change** (recommended, same page as email): turn it on, so a changed password needs a recent login.
+- Supabase's built-in email service sends only a few emails per hour (A20). The automated tests never send email.
+- **Do not run `supabase config push`** from this repository: `supabase/config.toml` differs from the live project in 15 places and a push would, among other things, turn email confirmation off.
 
 ## Scripts
 
@@ -157,7 +172,8 @@ Authentication settings in the Supabase dashboard (site URL, redirect URLs, emai
 - `npm run build` and `npm run start`: build and run the production build.
 - `npm run lint`: run ESLint.
 - `npm run test:db`: run the database tests (`playwright test tests/db`).
-- `npm run test:ui`: run the user-interface checks in Chromium at 375, 768 and 1280 px. The first time, run `npx playwright install chromium`. It builds and starts the app on port 3100 and needs no database.
+- `npm run test:unit`: run the unit checks (input rules, safe redirects, source-code guards). No browser, server or database.
+- `npm run test:ui`: run the user-interface checks in Chromium at 375, 768 and 1280 px, plus the sign-in checks. The first time, run `npx playwright install chromium`. It builds and starts the app on port 3100 and needs `.env.local` (it creates and deletes test owners).
 - `npx tsc --noEmit`: type-check the project.
 - `npx supabase gen types --remote --lang typescript --schema public > src/types/database.types.ts`: regenerate the database types after a migration.
 

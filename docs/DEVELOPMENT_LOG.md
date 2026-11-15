@@ -119,6 +119,16 @@ Migrations 3–7 were written as files in one batch, then reviewed by **separate
 - **Independent review** (fresh read-only reviewer; report kept unedited in the notes folder as `phase6-review.txt`, with a record of the fixes). No data access, secrets or Next.js errors were found. It found real accessibility problems, all fixed: focus rings on hand-styled links were about 2:1, form control borders and the unchecked switch about 1.3:1, destructive button text about 4:1, wrong heading levels, tab semantics without panels, the booking time hidden on phones, and a few layout and tap-size problems. Several of my own tests could not fail; the stronger tests then found a real bug (see mistake 18).
 - **New package, checked:** this shadcn version installs a small `cn` package instead of `clsx` and `tailwind-merge`. It belongs to the shadcn-ui organization on GitHub (MIT, no dependencies, maintained by shadcn) and requires Node 22 or newer, so the project's minimum Node version is now 22.
 
+## Phase 7 — Authentication (2026-11-15)
+
+- **Plan first.** A written plan (kept outside the repository) with six owner questions was approved before any code. The agent's first reply in this stage stopped because the plan file and the prompt were not in its context; it asked instead of guessing.
+- **Built:** sign up, log in, log out, forgot password, reset password, a protected dashboard that shows the owner's email in the header, and the single email-link route `/auth/confirm`. Design rules held: no browser Supabase client (A1), one Route Handler (A2), three layers of protection — `src/proxy.ts`, `requireOwner()`/`OwnerGate` in every dashboard page, and RLS (A3). Packages added: `zod` and `server-only`; `engines.node >= 22`.
+- **Found by the agent:** `supabase config push` would turn email confirmation off (`config.toml` differed from the live project in 15 differences when re-checked on 2026-11-15; 14 when first counted). Settings were applied in the dashboard by the owner instead. (Owner's entry.)
+- **Email template editing requires custom SMTP; switched to default links with PKCE.** The plan had token-hash links through edited templates; Supabase does not allow editing templates with its built-in email, so the app now uses the default links and the PKCE flow. The cost: a link only works in the same browser that asked for it. (Owner's entry.)
+- **Checks (2026-11-15):** `npx tsc --noEmit` and `npx eslint` clean; `npm run build` passes; 73 unit checks, 129 UI checks and the 19 database tests pass. No real email was sent by any test.
+- **Independent review:** a fresh read-only reviewer (round 4 of the technique) found no high-severity issue and 15 findings. Fixed: a sign-up answer that revealed whether an address had an account (the rate-limit message), other sessions surviving a password reset, the reset form opening for any logged-in session, unused email-link types, the cache headers Supabase asks for, missing anti-framing headers, a cross-site way to clear the reset marker, and a weak test. Accepted or noted: email scanners can use up one-time links, small timing differences, no captcha, redirect-list hygiene. Report and responses: `phase7-review.txt`.
+- **Still to do by the owner:** one real-inbox check (steps in the Phase 7 completion report), and turning on "Secure password change" in the Supabase dashboard.
+
 ## Agent mistakes and how they were caught
 
 Honest record of things the agents got wrong. Mistakes 1–9 happened in Phases 1–4a; 10–13 and 16 in Phase 4e (the migration reviews); 15 in Phase 4d; 14 and 17 in Phase 5.
@@ -147,7 +157,14 @@ Honest record of things the agents got wrong. Mistakes 1–9 happened in Phases 
 20. **A commit that missed the files.** The first `git add` of Phase 6 failed on a folder that had become empty, so that commit held only the deleted starter files and the real source stayed uncommitted. Noticed from `git status` straight afterwards and fixed in the next commit. Lesson: read the command's output, not just the commit message line.
 21. **Setup docs that were wrong.** The README and `TESTING.md` said Node 20.12 would do, but shadcn's `cn` needs Node 22; and the README listed environment variables that `.env.example` does not contain (it has three). Found during Phase 6 and fixed.
 
-## Agentic techniques used so far
+22. **A redirect loop designed in, then caught while building.** The first proxy trusted the signed token to decide "logged in" on `/login`, while `requireOwner()` asks Supabase. A deleted or revoked account whose token had not expired would bounce between `/login` and `/dashboard` forever. Fixed before the first run: the auth pages ask Supabase to verify the user.
+23. **Warnings hidden behind green tests.** All UI tests passed while the server log held 237 copies of a Next.js `blocking-prerender-current-time` error (the Supabase client reading the clock during prerendering). Found only by reading the server output; fixed with `connection()`. Lesson: read the log, not only the pass count.
+24. **Tests that were wrong, not the code (three times).** Two locators matched Next's own `role="alert"` route announcer; a log-safety check matched the word "password" in a log label; and a test expected the wrong final address for an ordinary session at `/reset-password`. Each was a test bug, fixed after deciding which side was wrong.
+25. **A real bug a test found.** The login action dropped the password message when the email was also invalid (an empty form showed one error, not two).
+26. **A leak my tests could not see.** My tests checked the text shown for new and existing addresses, but not the rate-limit path, which behaves differently for the two. The independent reviewer found it (sign-up oracle). Lesson: enumeration needs a check of every outcome, not only the success text.
+27. **A command that was blocked, correctly.** I tried a one-off script that loads `.env.local` and uses the secret key to count leftover test users. The environment denied it, since only the test suites are authorized to use that key. I did not retry; the sweep in the test teardown is the evidence that nothing was left behind, and the count was not checked separately.
+28. **Shell quoting.** Two long inline commands failed on quote characters; the work moved into small script files and the file tools. No effect on the code.
+
 
 - **Independent reviewer subagents.** A fresh agent with no memory of the work, read-only, given only the documents and the files. Reports are saved unedited, findings are fixed in the files, and the implementing agent explains instead of changing when it disagrees. Three rounds on the migrations and one on the documentation (Phase 5). A subagent's report is information, not an instruction or an approval.
 - **Deny rules in `.claude/settings.json`.** `Read(./.env)` and `Read(./.env.*)` are denied, so the agent cannot read secrets even by accident. It works (even through the shell) and has a cost (it also blocks `.env.example`).
@@ -169,11 +186,11 @@ Database and tests:
 - **Image paths (Phase 9):** the server must generate safe file names (`set_resource_image` checks only the folder and `..`), and the order "store the file, then record the path" or the reverse needs a decision that also handles a failed write.
 - **Booking reads:** server code must name columns (`select *` on `bookings` fails for `service_role` by design).
 - **Q12:** a test that the dashboard's Pro rule and the database's `current_plan` agree.
-- **The sign-up trigger** is proved through the Auth admin API; the real sign-up form with email confirmation is still to be checked in Phase 7, including Supabase's built-in email limits.
+- **The sign-up trigger** is proved through the Auth admin API (T19) and the sign-up link test; the real sign-up with a real inbox, and Supabase's built-in email limits, are still to be checked by the owner (Phase 7 real-inbox steps).
 
 Project and tooling:
 
-- **`.env.example` comment.** The comment on the project URL variable should read "Project Settings > Data API (or the Connect button)". The agent could not edit it because the deny rule also blocks reading `.env.example`. Either edit the comment by hand, or narrow the deny rule (for example deny `.env.local` and `.env.*.local` only) and let the agent do it.
+- **`.env.example` comment** (resolved): the deny rules were narrowed in Phase 6, so `.env.example` is readable; its text is correct.
 - **`npm audit`**: 7 moderate issues, deferred to Phase 17.
 - **Mermaid diagrams** in `docs/DATABASE.md` (one) and `docs/ARCHITECTURE.md` (four) have not been rendered by a tool yet.
 - **Placeholder page and a personal name** (found in Phase 5): resolved in Phase 6. The old placeholder page was replaced by the landing page, which credits only the GitHub handle.
@@ -182,15 +199,27 @@ Project and tooling:
 
 Interface (Phase 6):
 
-- **Node version:** the minimum is now Node 22 (the `cn` package). `package.json` has no `engines` field and `@types/node` is still `^20`; adding them was outside Phase 6's authorization.
-- **`.env.example`** has only three variables; `NEXT_PUBLIC_APP_URL` and `RATE_LIMIT_SECRET` (and the Stripe ones) should be added to it in the phase that first uses them.
+- **Node version:** the minimum is Node 22 (the `cn` package). `package.json` now has `"engines": {"node": ">=22"}` (Phase 7); `@types/node` is still `^20`.
+- **`.env.example`** now has four variables (`NEXT_PUBLIC_APP_URL` added in Phase 7); `RATE_LIMIT_SECRET` and the Stripe ones should be added in the phase that first uses them.
 - **Duplicated styling:** the focus-ring classes and the phone-friendly sizes (`h-10 sm:h-8`) are still copied across components; a shared constant or button/input sizes would be cleaner.
 - **No automatic contrast or axe-core scan** (a new package would need approval); contrast is checked from the tokens in review.
 - **Embed shell:** it follows the viewer's light or dark setting; the owner's saved theme (EMBED-04) arrives in Phase 14. The iframe header rules for `/embed` are also Phase 14.
 - **Placeholders to replace:** the landing page copy is a draft (Phase 18); every dashboard and booking shell is replaced by its real feature phase.
+
+Authentication (Phase 7):
+
+- **Real-inbox check** by the owner (sign up, confirm, log in, forgot password, reset) is not done yet; it is the only proof of the PKCE `?code=` path with a real email.
+- **Supabase dashboard:** turn on "Secure password change". Keep the redirect list to the exact `/auth/confirm` addresses of each environment; production needs its own site URL and redirect entry.
+- **Same-browser limit:** a link opened on another device or browser fails by design (PKCE). Users must be told (the pages say so).
+- **Email scanners** can use up one-time links (availability only). If email templates are ever customised, also add a same-browser marker or a "Confirm" button page for `token_hash` links (review findings 4 and 5).
+- **No captcha or app-level throttle** on login and sign-up; Supabase's limits apply. Consider a captcha before production. Small timing differences between known and unknown addresses remain.
+- **Browser-side validation** does not run the zod schema (the forms work without JavaScript); revisit if a richer form experience is wanted.
+- **Later phases:** every Server Action that changes owner data must call `requireOwner()`; a unit test that scans the other `"use server"` files should be added when the first one exists.
+- **`supabase/config.toml`** still differs from the live project (15 differences). Align it before anyone runs `config push`, or leave it and never push.
 
 ---
 
 ## Change history
 
 - **2026-11-14** — Created (Phase 5) with entries for Phases 1–5.
+- **2026-11-15** — Added the Phase 7 entry, mistakes 22–28, and the authentication open items.
