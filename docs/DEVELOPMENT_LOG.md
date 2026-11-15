@@ -180,6 +180,17 @@ Migrations 3–7 were written as files in one batch, then reviewed by **separate
 - **Tests removed:** two old placeholder tests of the sample booking list in `interactions.spec.ts` (the real list is tested on real data).
 - **Checks (2026-11-15):** `npx tsc --noEmit`, `npx eslint` and `npm run build` clean; 256 unit, 26 + the existing UI tests and 89 database tests pass (full numbers in `TESTING.md`).
 
+## Parallel development (Phases 13 and 14)
+
+Phases 13 (analytics) and 14 (embed widget) touch different files, so they were built at the same time. The plan, as it was run:
+
+- **One Claude Code session, two background subagents.** The owner does not open a second terminal and does not copy `.env.local`. The main session starts two subagents in the background at the same time.
+- **Two git worktrees, two branches.** `..\slotmate-analytics` on `feat/phase13-analytics` (subagent A) and `..\slotmate-widget` on `feat/phase14-widget` (subagent B). Each subagent works only inside its own existing worktree and branch and commits only there, never on `main`. Each worktree has its own `node_modules` (`npm install`).
+- **No secrets in the worktrees.** They have no `.env.local`, so the subagents run only `npx tsc --noEmit`, `npx eslint` and `npm run test:unit`. UI and database tests are written but run later, in the main folder after the merge.
+- **Fences.** Analytics must not touch embed, widget or public-booking files; the widget must not touch `package.json` or analytics files (recharts is installed by analytics only). Neither edits `README.md`, `docs/TESTING.md`, `docs/DEVELOPMENT_LOG.md`, `docs/ARCHITECTURE.md` or the dashboard navigation, sidebar or header; they leave notes in `slotmate-notes\phase13-notes.txt` and `phase14-notes.txt`.
+- **Configurable UI test port.** `UI_TEST_PORT` (default 3100) in `playwright.ui.config.ts` lets two checkouts run the UI suite side by side.
+- **After both finish:** merge into `main`, full checks in the main folder, two fresh reviewers (one per phase), then the docs from the notes files. Evidence is recorded below.
+
 ## Agent mistakes and how they were caught
 
 Honest record of things the agents got wrong. Mistakes 1–9 happened in Phases 1–4a; 10–13 and 16 in Phase 4e (the migration reviews); 15 in Phase 4d; 14 and 17 in Phase 5.
