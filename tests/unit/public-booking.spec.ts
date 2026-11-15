@@ -5,7 +5,7 @@ import { createHash, createHmac } from "node:crypto";
 import { BOOKING_MESSAGES, mapBookingError } from "../../src/features/public-booking/errors";
 import { bookingSchema, parseBooking, STATUS_CODE, type RawFields } from "../../src/features/public-booking/schema";
 import { clockIn, dateIn, dateLabel, zoneLabel } from "../../src/lib/time/format";
-import { clientAddress, keyedHash, LOCAL_ADDRESS } from "../../src/lib/rate-limit-hash";
+import { clientAddress, keyedHash, LOCAL_ADDRESS, normaliseAddress } from "../../src/lib/rate-limit-hash";
 import { dropOverlappingSlots, dropTakenSlots, slotsForDay, type Slot } from "../../src/lib/time/slots";
 
 // Phase 11: the public booking rules that need no browser, server or database.
@@ -69,6 +69,11 @@ test.describe("booking form rules (PUB-04, D11, limits match the database CHECKs
       expect(parseBooking({ ...good, startsAt }, 5), startsAt).toMatchObject({ ok: false, errors: { startsAt: expect.any(String) } });
     }
   });
+  test("a NUL character is refused in name and note", () => {
+    const nul = String.fromCharCode(0);
+    expect(parseBooking({ ...good, name: `Ada${nul}` }, 5).ok).toBe(false);
+    expect(parseBooking({ ...good, note: `x${nul}y` }, 5).ok).toBe(false);
+  });
   test("resource id must be a uuid; every bad field is reported at once", () => {
     expect(parseBooking({ ...good, resourceId: "x" }, 5)).toMatchObject({ ok: false, errors: { resourceId: expect.any(String) } });
     const r = parseBooking({ ...good, name: "", email: "x", attendees: "0" }, 5);
@@ -92,6 +97,7 @@ test.describe("error mapping (AVAIL-05, PUB-06)", () => {
     expect(mapBookingError({ code: "23514", message: "new row violates check constraint bookings_name" })).toBe("invalid_values");
     expect(mapBookingError({ code: "40P01", message: "deadlock detected" })).toBe("unknown");
     expect(mapBookingError({ code: "XX000", message: "the pastime of a foreign country" })).toBe("unknown");
+    expect(mapBookingError({ code: "P0001", message: "invalid value for past" })).toBe("unknown"); // exact names only
     for (const text of Object.values(BOOKING_MESSAGES)) expect(text).not.toMatch(/constraint|postgres|sql|violates|_/i);
   });
 });
@@ -161,10 +167,21 @@ test.describe("rate limit hashing (DB11, A9)", () => {
   test("the first x-forwarded-for value is used; a missing header uses one fixed value", () => {
     const h = (v?: string) => ({ get: (n: string) => (n === "x-forwarded-for" ? (v ?? null) : null) });
     expect(clientAddress(h("203.0.113.9, 10.0.0.1"))).toBe("203.0.113.9");
-    expect(clientAddress(h(" 2001:DB8::1 "))).toBe("2001:db8::1");
+    expect(clientAddress(h(" 2001:DB8::1 "))).toBe("2001:0db8:0000:0000::/64");
     expect(clientAddress(h())).toBe(LOCAL_ADDRESS);
     expect(clientAddress(h(""))).toBe(LOCAL_ADDRESS);
     expect(clientAddress(h("x".repeat(101)))).toBe(LOCAL_ADDRESS);
+  });
+  test("IPv6: one visitor is one /64 block; spellings and IPv4-mapped forms are the same key (review finding 3)", () => {
+    const same = ["2001:db8:1:2::1", "2001:DB8:1:2:ffff:ffff:ffff:ffff", "2001:0db8:0001:0002:0000:0000:0000:0001", "[2001:db8:1:2::abcd]", "2001:db8:1:2:3:4:5:6%eth0"];
+    const keys = new Set(same.map(normaliseAddress));
+    expect([...keys]).toEqual(["2001:0db8:0001:0002::/64"]);
+    expect(normaliseAddress("2001:db8:1:3::1")).not.toBe(normaliseAddress("2001:db8:1:2::1"));
+    expect(normaliseAddress("::ffff:203.0.113.9")).toBe("203.0.113.9");
+    expect(normaliseAddress("0:0:0:0:0:ffff:203.0.113.9")).toBe("203.0.113.9");
+    expect(normaliseAddress("203.0.113.9")).toBe("203.0.113.9");
+    expect(normaliseAddress("::1")).toBe("0000:0000:0000:0000::/64");
+    expect(normaliseAddress("not-an-address:::")).toBe("not-an-address:::");
   });
   test("the hash is HMAC-SHA256 with the secret: 32 bytes, stable, different per secret and address, never the address", () => {
     const a = keyedHash("secret-one", "203.0.113.9");

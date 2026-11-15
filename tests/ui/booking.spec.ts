@@ -624,3 +624,23 @@ test("an owner who reached the monthly limit: the page says so and shows no form
     await context.close();
   }
 });
+
+test("after a successful booking, going Back shows no false error message (the redirect is not a failure)", async ({ browser, baseURL }) => {
+  const owner = await sharedOwner();
+  const fx = await makeWorkspace(owner);
+  const { context, page } = await visitor(browser, baseURL!);
+  try {
+    await page.goto(`/book/${fx.slug}`);
+    await pick(page, null, day(8), "15:00");
+    await details(page, { name: "Back Button", email: `back-${tag()}@example.com` });
+    await submit(page).click();
+    await page.waitForURL(CODE);
+    await page.goBack();
+    await expect(page.getByTestId("booking-flow")).toBeVisible();
+    await expect(page.getByTestId("booking-error")).toHaveCount(0);
+    expect((await service.from("bookings").select("id").eq("resource_id", fx.resources[0].id)).data).toHaveLength(1);
+  } finally {
+    await context.close();
+    await fx.cleanup();
+  }
+});

@@ -30,6 +30,9 @@ const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 
 export const resourceIdSchema = z.uuid();
 
+// PostgreSQL cannot store a NUL character (it would be a database error), so it is refused up front.
+const noNul = (value: string) => !value.includes(String.fromCharCode(0));
+
 export function bookingSchema(capacity: number) {
   return z.object({
     resourceId: z.uuid(MESSAGES.resource),
@@ -45,7 +48,7 @@ export function bookingSchema(capacity: number) {
         }
         return new Date(ms).toISOString();
       }),
-    name: z.string(MESSAGES.name).trim().min(1, MESSAGES.name).max(LIMITS.name, MESSAGES.name),
+    name: z.string(MESSAGES.name).trim().min(1, MESSAGES.name).max(LIMITS.name, MESSAGES.name).refine(noNul, MESSAGES.name),
     email: z.string(MESSAGES.email).trim().max(LIMITS.email, MESSAGES.email).pipe(z.email(MESSAGES.email)),
     phone: z
       .string()
@@ -57,6 +60,7 @@ export function bookingSchema(capacity: number) {
       .string()
       .trim()
       .max(LIMITS.note, MESSAGES.note)
+      .refine(noNul, MESSAGES.note)
       .transform((v) => (v === "" ? null : v)),
     attendees: z
       .string(attendeesMessage(capacity))

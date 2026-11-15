@@ -31,9 +31,10 @@ const NAMED = [
 ] as const satisfies readonly BookingErrorKind[];
 
 export function mapBookingError(error: DbError): BookingErrorKind {
-  const message = error.message ?? "";
+  // The database raises exactly the name as the message; an exact match cannot be steered by echoed text.
+  const message = (error.message ?? "").trim();
   for (const name of NAMED) {
-    if (new RegExp(`\\b${name}\\b`).test(message)) return name;
+    if (message === name) return name;
   }
   // The overlap rule itself, if it ever surfaces without the function's own name.
   if (error.code === "23P01") return "slot_taken";

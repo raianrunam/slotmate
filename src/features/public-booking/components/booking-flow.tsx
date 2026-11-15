@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { ImageIcon } from "lucide-react";
+import { CheckIcon, ImageIcon } from "lucide-react";
 import { FormField } from "@/components/form-field";
 import { FormMessage } from "@/components/form-message";
 import { Button } from "@/components/ui/button";
@@ -127,7 +127,7 @@ export function BookingFlow({
       attendees: fields.attendees,
     };
     // Quick checks with the SAME rules the server uses again.
-    const checked = parseBooking(raw, resource?.capacity ?? 1);
+    const checked = parseBooking(raw, resource?.capacity ?? 1000);
     if (!checked.ok) {
       setErrors(checked.errors);
       focusFirst(checked.errors);
@@ -141,7 +141,11 @@ export function BookingFlow({
       let answer: BookingFormState;
       try {
         answer = await submitBooking(formData); // a success redirects and never returns
-      } catch {
+      } catch (error) {
+        // A successful booking REDIRECTS, and in this Next.js version the redirect also rejects the
+        // call. That is not a failure (Phase 11 review finding 1): let Next.js carry on to the status page.
+        const digest = typeof error === "object" && error !== null && "digest" in error ? String((error as { digest: unknown }).digest) : "";
+        if (digest.startsWith("NEXT_REDIRECT")) throw error;
         setFormError({ kind: "unknown", message: "Something went wrong. Please check your connection and try again." });
         return;
       }
@@ -281,6 +285,7 @@ export function BookingFlow({
                           setFormError(null);
                         }}
                       >
+                        {selected ? <CheckIcon aria-hidden="true" /> : null}
                         {slot.start}
                         <span className="sr-only"> to {slot.end}</span>
                       </Button>
@@ -308,7 +313,7 @@ export function BookingFlow({
         </div>
 
         {chosen && resource ? (
-          <p className="rounded-md bg-muted px-3 py-2 text-sm" data-testid="booking-summary">
+          <p role="status" className="rounded-md bg-muted px-3 py-2 text-sm" data-testid="booking-summary">
             {resource.name}: {dateLabel(date)}, {chosen.start} to {chosen.end} ({zoneLabel})
           </p>
         ) : null}
