@@ -18,7 +18,7 @@ import { UpgradePrompt } from "@/components/upgrade-prompt";
 
 // The dashboard menu on phones and tablets: a button in the header that opens
 // the navigation in a side sheet (below 1024 px). The sheet closes when a link is chosen.
-export function DashboardMobileNav() {
+export function DashboardMobileNav({ pendingCount = 0 }: { pendingCount?: number }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -49,7 +49,7 @@ export function DashboardMobileNav() {
           </SheetClose>
         </SheetHeader>
         <div className="flex-1 overflow-y-auto">
-          <DashboardNav onNavigate={() => setOpen(false)} />
+          <DashboardNav onNavigate={() => setOpen(false)} pendingCount={pendingCount} />
         </div>
         <UpgradePrompt />
       </SheetContent>

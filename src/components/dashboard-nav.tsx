@@ -21,7 +21,7 @@ interface NavItem {
   icon: LucideIcon;
 }
 
-// The dashboard's sections. Each one is a placeholder page in Phase 6.
+// The dashboard's sections. Bookings shows how many requests wait for a decision (NOTIF-02).
 const NAV_ITEMS: readonly NavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboardIcon },
   { href: "/dashboard/workspaces", label: "Workspaces", icon: Building2Icon },
@@ -33,7 +33,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { href: "/dashboard/billing", label: "Billing", icon: CreditCardIcon },
 ];
 
-export function DashboardNav({ onNavigate }: { onNavigate?: () => void }) {
+export function DashboardNav({ onNavigate, pendingCount = 0 }: { onNavigate?: () => void; pendingCount?: number }) {
   const pathname = usePathname();
 
   return (
@@ -58,6 +58,15 @@ export function DashboardNav({ onNavigate }: { onNavigate?: () => void }) {
               >
                 <Icon className="size-4 shrink-0" aria-hidden="true" />
                 {label}
+                {href === "/dashboard/bookings" && pendingCount > 0 ? (
+                  <span
+                    data-testid="nav-pending-count"
+                    className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs leading-none font-semibold text-primary-foreground"
+                  >
+                    {pendingCount > 99 ? "99+" : pendingCount}
+                    <span className="sr-only"> pending requests</span>
+                  </span>
+                ) : null}
               </Link>
             </li>
           );
