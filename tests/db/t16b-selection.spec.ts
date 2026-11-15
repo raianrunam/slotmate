@@ -132,11 +132,14 @@ test.describe('T16 part 2: downgrade selection', () => {
   })
 
   test('within the limits there is nothing to select (selection_not_needed)', async () => {
-    const own = await workspace(other, 'solo').catch(async () => (await other.client.from('workspaces').select('id').limit(1).single()).data!.id)
-    const res = await apply(own, [], other.id)
+    // Self-contained: its own owner and workspace, so the test also passes when run alone.
+    const solo = await createOwner()
+    const own = await workspace(solo, 'solo')
+    const res = await apply(own, [], solo.id)
     expect(res.error).not.toBeNull()
     expect(res.error!.message).toMatch(/selection_not_needed/)
-    const rows = await other.client.from('workspaces').select('is_locked')
+    const rows = await solo.client.from('workspaces').select('is_locked')
+    expect((rows.data ?? []).length).toBe(1)
     expect((rows.data ?? []).every((w) => !w.is_locked)).toBe(true)
   })
 
