@@ -33,13 +33,12 @@ const YOUNG_FILE_MS = 60_000;
 // by a later sweep or by the delete of the resource (removeResourceFiles takes them all).
 async function sweepFolder(
   admin: ReturnType<typeof createAdminClient>,
-  ownerId: string,
   resourceId: string,
   keepPath: string | null,
   previousPath: string | null = null,
 ): Promise<boolean> {
   try {
-    const folder = imageFolder(ownerId, resourceId);
+    const folder = imageFolder(resourceId);
     const [listed, current] = await Promise.all([
       admin.storage.from(BUCKET).list(folder, { limit: 100 }),
       admin.from("resources").select("image_path").eq("id", resourceId).maybeSingle(),
@@ -81,7 +80,7 @@ export async function saveResourceImage(args: {
   previousPath: string | null;
 }): Promise<SaveImageResult> {
   const admin = createAdminClient();
-  const path = imagePath(args.ownerId, args.resourceId, randomUUID(), args.image.ext);
+  const path = imagePath(args.resourceId, randomUUID(), args.image.ext);
 
   const upload = await admin.storage.from(BUCKET).upload(path, args.bytes, {
     contentType: args.image.contentType, // from the detected signature, not from the browser
@@ -110,7 +109,7 @@ export async function saveResourceImage(args: {
   // the previous image, and any orphan left by a concurrent upload. Best effort:
   // if it fails the owner still has the right image and the extra files are only
   // wasted space (they are removed by the next sweep or by the delete).
-  if (!(await sweepFolder(admin, args.ownerId, args.resourceId, path, args.previousPath))) {
+  if (!(await sweepFolder(admin, args.resourceId, path, args.previousPath))) {
     console.error("image folder sweep failed");
   }
   return { ok: true };
@@ -134,17 +133,17 @@ export async function removeResourceImage(args: {
     console.error("set_resource_image (remove) failed", { code: record.error.code });
     return { ok: false, reason: "database", error: record.error };
   }
-  if (!(await sweepFolder(admin, args.ownerId, args.resourceId, null, args.previousPath))) {
+  if (!(await sweepFolder(admin, args.resourceId, null, args.previousPath))) {
     console.error("image folder sweep failed");
   }
   return { ok: true };
 }
 
 /** After a successful row delete: a best-effort second sweep (catches a file uploaded during the delete). */
-export async function sweepResourceFilesAfterDelete(ownerId: string, resourceIds: readonly string[]): Promise<void> {
+export async function sweepResourceFilesAfterDelete(resourceIds: readonly string[]): Promise<void> {
   // Everything goes, young files included: the resource row is already deleted.
   try {
-    await removeResourceFiles(ownerId, resourceIds);
+    await removeResourceFiles(resourceIds);
   } catch {
     // best effort
   }
@@ -156,13 +155,13 @@ export async function sweepResourceFilesAfterDelete(ownerId: string, resourceIds
  * too, not only the recorded path). Returns false if Storage failed, and the
  * caller must then stop and NOT delete the rows.
  */
-export async function removeResourceFiles(ownerId: string, resourceIds: readonly string[]): Promise<boolean> {
+export async function removeResourceFiles(resourceIds: readonly string[]): Promise<boolean> {
   if (resourceIds.length === 0) return true;
   const admin = createAdminClient();
   const storage = admin.storage.from(BUCKET);
   try {
     for (const resourceId of resourceIds) {
-      const folder = imageFolder(ownerId, resourceId);
+      const folder = imageFolder(resourceId);
       // A resource has at most a couple of files; loop in case a folder holds more than one page.
       let empty = false;
       for (let guard = 0; guard < 20 && !empty; guard++) {

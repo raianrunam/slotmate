@@ -84,19 +84,19 @@ export function checkImageBytes(bytes: Uint8Array): ImageCheck {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
- * The Storage path of a new image: <owner_id>/<resource_id>/<random>.<ext>
- * (dev-log note 35). The file name is generated here, never taken from the
- * owner; both ids must be lowercase hyphenated UUIDs.
+ * The Storage path of a new image: <resource_id>/<random>.<ext>
+ * (dev-log note 35; the owner id left the path in migration 8). The file name is generated here, never taken from the
+ * owner; both ids must be lowercase hyphenated UUIDs. The folder is the resource id alone.
  */
-export function imagePath(ownerId: string, resourceId: string, randomId: string, ext: DetectedImage["ext"]): string {
-  for (const id of [ownerId, resourceId, randomId]) {
+export function imagePath(resourceId: string, randomId: string, ext: DetectedImage["ext"]): string {
+  for (const id of [resourceId, randomId]) {
     if (!UUID.test(id)) throw new Error("Invalid id for an image path.");
   }
-  return `${ownerId}/${resourceId}/${randomId}.${ext}`;
+  return `${resourceId}/${randomId}.${ext}`;
 }
 
 /** The folder that holds all of one resource's files. */
-export function imageFolder(ownerId: string, resourceId: string): string {
-  if (!UUID.test(ownerId) || !UUID.test(resourceId)) throw new Error("Invalid id for an image folder.");
-  return `${ownerId}/${resourceId}`;
+export function imageFolder(resourceId: string): string {
+  if (!UUID.test(resourceId)) throw new Error("Invalid id for an image folder.");
+  return resourceId;
 }

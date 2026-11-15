@@ -113,7 +113,7 @@ export async function deleteWorkspace(
   _prev: WorkspaceFormState,
   formData: FormData,
 ): Promise<WorkspaceFormState> {
-  const owner = await requireOwner();
+  await requireOwner();
 
   const id = workspaceIdSchema.safeParse(readFields(formData, ["id"]).id);
   if (!id.success) return { status: "error", message: MESSAGES.id };
@@ -129,7 +129,7 @@ export async function deleteWorkspace(
     logFailure("deleteWorkspace", inside.error);
     return failure(mapWorkspaceError(inside.error));
   }
-  if (!(await removeResourceFiles(owner.id, (inside.data ?? []).map((r) => r.id)))) {
+  if (!(await removeResourceFiles((inside.data ?? []).map((r) => r.id)))) {
     return {
       status: "error",
       message: "We could not delete the image files of this workspace's resources, so nothing was deleted. Please try again.",
@@ -148,7 +148,7 @@ export async function deleteWorkspace(
     return { status: "error", message: FRIENDLY.notAllowed };
   }
 
-  await sweepResourceFilesAfterDelete(owner.id, (inside.data ?? []).map((r) => r.id)); // best-effort second sweep
+  await sweepResourceFilesAfterDelete((inside.data ?? []).map((r) => r.id)); // best-effort second sweep
   revalidatePath("/dashboard", "layout");
   redirect("/dashboard/workspaces?notice=deleted");
 }

@@ -134,7 +134,7 @@ export async function deleteResource(_prev: ResourceFormState, formData: FormDat
   if (!resource) return { status: "error", message: FRIENDLY.notAllowed };
 
   // DB15: stored files first. If Storage fails, stop: nothing is deleted.
-  if (!(await removeResourceFiles(owner.id, [resource.id]))) {
+  if (!(await removeResourceFiles([resource.id]))) {
     return {
       status: "error",
       message: "We could not delete this resource's image files, so nothing was deleted. Please try again.",
@@ -150,7 +150,7 @@ export async function deleteResource(_prev: ResourceFormState, formData: FormDat
     return result.error ? failure(mapResourceError(result.error)) : { status: "error", message: FRIENDLY.notAllowed };
   }
 
-  await sweepResourceFilesAfterDelete(owner.id, [resource.id]); // best-effort second sweep
+  await sweepResourceFilesAfterDelete([resource.id]); // best-effort second sweep
   revalidatePath("/dashboard", "layout");
   redirect("/dashboard/resources?notice=deleted");
 }
