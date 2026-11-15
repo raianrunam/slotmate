@@ -185,24 +185,8 @@ test.describe("shared components", () => {
 test.describe("shared components (logged in)", () => {
   test.use({ storageState: OWNER_STATE });
 
-  test("a permanent delete asks for confirmation; Cancel and Escape close it and focus returns", async ({ page }) => {
-    await page.goto("/dashboard/workspaces");
-    const trigger = page.getByRole("button", { name: "Delete" });
-
-    await trigger.click();
-    const dialog = page.getByRole("alertdialog");
-    await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText("cannot be undone");
-    await dialog.getByRole("button", { name: "Cancel" }).click();
-    await expect(dialog).toBeHidden();
-    await expect(trigger).toBeFocused();
-
-    await trigger.click();
-    await expect(dialog).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
-    await expect(trigger).toBeFocused();
-  });
+  // The delete confirmation dialog (Cancel, Escape, focus return) is now tested on the
+  // real workspace list in tests/ui/workspaces.spec.ts (Phase 8).
 
   test("the account menu works with the keyboard", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
