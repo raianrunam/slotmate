@@ -87,7 +87,48 @@ test.describe("webhook guards with real Stripe objects", () => {
     const after = await subscriptionRow(owner.id);
     expect(after).toEqual(before);
     expect(after.stripe_subscription_id, "still the first one").toBe(currentSub);
-    await stripe.subscriptions.cancel(second);
+    // Phase 17 (Phase 16 MEDIUM-2): the extra subscription is cancelled in Stripe and its payment refunded.
+    const extra = await stripe.subscriptions.retrieve(second);
+    expect(extra.status, "the extra subscription is cancelled").toBe("canceled");
+    const invoiceId = typeof extra.latest_invoice === "string" ? extra.latest_invoice : extra.latest_invoice!.id;
+    const paid = await stripe.invoicePayments.list({ invoice: invoiceId, status: "paid" });
+    expect(paid.data.length).toBeGreaterThan(0);
+    const pi = paid.data[0].payment.payment_intent;
+    const refunds = await stripe.refunds.list({ payment_intent: typeof pi === "string" ? pi : pi!.id });
+    expect(refunds.data.length, "one refund").toBe(1);
+    expect(refunds.data[0].status).not.toBe("failed");
+    // The stored subscription is untouched and still live.
+    expect((await stripe.subscriptions.retrieve(currentSub)).status).toBe("active");
+  });
+
+  test("the STORED subscription switched to another price ends Pro (Phase 16 MEDIUM-1)", async ({ request }) => {
+    const switcher = await newOwner();
+    const switchCustomer = await createPayingCustomer(stripe, `switch ${tag()}`);
+    customers.push(switchCustomer);
+    const sub = await stripe.subscriptions.create({ customer: switchCustomer, items: [{ price: priceId! }], metadata: { owner_id: switcher.id } });
+    subscriptions.push(sub.id);
+    const link = stripeEvent("checkout.session.completed", { mode: "subscription", subscription: sub.id, customer: switchCustomer, client_reference_id: switcher.id });
+    expect((await sendEvent(request, link.payload)).status()).toBe(200);
+    expect((await subscriptionRow(switcher.id)).plan).toBe("pro");
+
+    // Same subscription, but it now sits on a different price (what a price rotation or a portal plan switch does).
+    if (!productId) {
+      productId = (await stripe.products.create({ name: `slotmate-test other ${tag()}`, metadata: { slotmate_test: "1" } })).id;
+    }
+    await stripe.subscriptions.update(sub.id, {
+      proration_behavior: "none",
+      items: [{ id: sub.items.data[0].id, price_data: { currency: "usd", product: productId, unit_amount: 300, recurring: { interval: "month" } } }],
+    });
+    const changed = await stripe.subscriptions.retrieve(sub.id);
+    expect(changed.status).toBe("active");
+    expect(changed.items.data[0].price.id).not.toBe(priceId);
+
+    const e = stripeEvent("customer.subscription.updated", { id: sub.id, customer: switchCustomer });
+    expect((await sendEvent(request, e.payload)).status()).toBe(200);
+    const row = await subscriptionRow(switcher.id);
+    expect(row.plan, "no Pro price any more -> not Pro").toBe("free");
+    expect(row.stripe_subscription_id).toBeNull();
+    expect(row.stripe_customer_id, "customer kept").toBe(switchCustomer);
   });
 
   test("a subscription with another price does not make the owner Pro", async ({ request }) => {

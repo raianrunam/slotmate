@@ -248,3 +248,14 @@ export function decideWrite(
 export function sameRow(a: SubscriptionRow, b: SubscriptionRow): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
+
+/**
+ * The row for a subscription Stripe just described. A subscription that no longer contains our Pro price
+ * (price rotation, plan switch) is NOT Pro any more: the row ends as Free (DATABASE.md 7.6, Phase 17).
+ */
+export function rowFromStripe(
+  sub: StripeSubscriptionLike & { items: { data: { price?: { id?: string | null } | null; current_period_end?: number | null }[] } },
+  proPriceId: string,
+): SubscriptionRow {
+  return containsProPrice(sub, proPriceId) ? mapSubscription(sub) : endedRow(idOf(sub.customer));
+}

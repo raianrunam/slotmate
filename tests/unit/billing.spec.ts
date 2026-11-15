@@ -160,7 +160,8 @@ test("selection errors map to fixed sentences and never echo database text", () 
 // ---- Source guards for the webhook design (A14, SEC-04) ----
 test("webhook source: raw body, signature first, then claim, then Stripe's own answer, then mark", () => {
   const src = read("src/features/billing/webhook.ts");
-  expect(src).toContain("request.text()");
+  expect(src, "the raw body, read with a size cap").toContain("await readCappedBody(request)");
+  expect(src).not.toContain("request.text()");
   expect(src).not.toMatch(/request\.(json|formData)\(/);
   const order = ["constructEvent(", 'rpc("claim_stripe_event"', "await fetchSubscription(", "await saveRow("].map((s) => src.indexOf(s));
   order.push(src.lastIndexOf("await markProcessed()")); // the final "done" answer, after the save
@@ -182,8 +183,8 @@ test("webhook source: bad signature answers 400 before the admin connection exis
   const last400 = src.lastIndexOf("json(400");
   expect(src.indexOf("json(400")).toBeGreaterThan(0);
   expect(last400).toBeGreaterThan(src.indexOf("constructEvent("));
-  expect(last400).toBeLessThan(src.indexOf("createAdminClient()", src.indexOf("async function handle")));
-  expect(src.indexOf("json(413")).toBeLessThan(src.indexOf("request.text()"));
+  expect(last400).toBeLessThan(src.indexOf("deps.admin()", src.indexOf("async function handle")));
+  expect(src.indexOf("json(413")).toBeLessThan(src.indexOf("await readCappedBody(request)"));
 });
 
 test("billing actions: owner check first, no plan write, success never changes the plan", () => {

@@ -15,7 +15,7 @@ import {
   endedRow,
   eventTarget,
   isHandledEvent,
-  mapSubscription,
+  rowFromStripe,
   sameRow,
   uuidSchema,
   type EventTarget,
@@ -45,6 +45,35 @@ import {
 // migration ("the webhook does not retry itself") is outdated and is not edited.
 
 const MAX_BODY_BYTES = 1_000_000;
+
+/** What the handler talks to. Production uses the real clients; tests pass stand-ins. */
+export interface WebhookDeps {
+  stripe: () => Stripe;
+  admin: () => ReturnType<typeof createAdminClient>;
+}
+const realDeps: WebhookDeps = { stripe: getStripe, admin: createAdminClient };
+
+/**
+ * Reads the body but stops as soon as it is larger than the limit (a chunked request has no
+ * Content-Length to check first). null = too large.
+ */
+export async function readCappedBody(request: Request, limit = MAX_BODY_BYTES): Promise<string | null> {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
 
 const json = (status: number, body: Record<string, unknown>) => Response.json(body, { status });
 const tryAgain = () => json(500, { error: "try_again" });
@@ -116,9 +145,9 @@ async function saveRow(admin: Admin, ownerId: string, row: SubscriptionRow): Pro
 }
 
 /** Stripe's current answer. null = Stripe no longer has it; "error" = try again later. */
-async function fetchSubscription(id: string): Promise<Stripe.Subscription | null | "error"> {
+async function fetchSubscription(stripe: Stripe, id: string): Promise<Stripe.Subscription | null | "error"> {
   try {
-    return await getStripe().subscriptions.retrieve(id);
+    return await stripe.subscriptions.retrieve(id);
   } catch (error) {
     if (error instanceof ConfigError) throw error;
     const code = (error as { code?: string } | null)?.code ?? null;
@@ -128,9 +157,9 @@ async function fetchSubscription(id: string): Promise<Stripe.Subscription | null
   }
 }
 
-export async function handleStripeWebhook(request: Request): Promise<Response> {
+export async function handleStripeWebhook(request: Request, deps: WebhookDeps = realDeps): Promise<Response> {
   try {
-    return await handle(request);
+    return await handle(request, deps);
   } catch (error) {
     // A missing server setting is our fault (500, generic body); anything else unexpected too.
     console.error("stripe webhook failed", { step: error instanceof ConfigError ? "configuration" : "unexpected", code: null });
@@ -138,17 +167,17 @@ export async function handleStripeWebhook(request: Request): Promise<Response> {
   }
 }
 
-async function handle(request: Request): Promise<Response> {
+async function handle(request: Request, deps: WebhookDeps): Promise<Response> {
   // 1 + 2: signature header and size, then the raw body, before anything else.
   const signature = request.headers.get("stripe-signature");
   if (!signature) return json(400, { error: "invalid_signature" });
   const declared = Number(request.headers.get("content-length") ?? "0");
   if (declared > MAX_BODY_BYTES) return json(413, { error: "too_large" });
-  const raw = await request.text();
-  if (raw.length > MAX_BODY_BYTES) return json(413, { error: "too_large" });
+  const raw = await readCappedBody(request);
+  if (raw === null) return json(413, { error: "too_large" });
 
   const secret = getWebhookSecret(); // a ConfigError here is our fault, not the caller's
-  const stripe = getStripe();
+  const stripe = deps.stripe();
   let event: Stripe.Event;
   try {
     event = stripe.webhooks.constructEvent(raw, signature, secret, SIGNATURE_TOLERANCE_SECONDS);
@@ -159,7 +188,7 @@ async function handle(request: Request): Promise<Response> {
   // 3: event types we do not act on are acknowledged (Stripe stops retrying).
   if (!isHandledEvent(event.type)) return json(200, { received: true, handled: false });
 
-  const admin = createAdminClient();
+  const admin = deps.admin();
 
   // 4: remembered messages.
   const claim = await withDeadlockRetry(() =>
@@ -188,21 +217,23 @@ async function handle(request: Request): Promise<Response> {
   if (!target) return await markProcessed(); // for example a one-time payment checkout
 
   // 5: ask Stripe for the subscription's CURRENT state (A14).
-  const first = await fetchSubscription(target.subscriptionId!);
+  const first = await fetchSubscription(stripe, target.subscriptionId!);
   if (first === "error") return tryAgain();
   const proPriceId = getProPriceId();
-  // A subscription without our Pro price (another product, a plan switch) is not ours: no change.
-  if (first && !containsProPrice(first, proPriceId)) return await skip("not_pro_price");
 
-  // 6: owner and state.
+  // 6: owner first. The Pro-price check only gates LINKING a subscription we do not store yet;
+  // for the stored subscription Stripe's real state always wins, so a subscription that leaves the
+  // Pro price (a price rotation, a plan switch in the portal) ends Pro here (MEDIUM-1 of Phase 16).
   const match = await findOwner(admin, target, first);
   if (match === "error") return tryAgain();
   if (!match) return await skip("unknown_owner"); // not one of ours: nothing to change, no retry wanted
+  const isStored = match.currentSubscriptionId === target.subscriptionId;
+  if (first && !isStored && !containsProPrice(first, proPriceId)) return await skip("not_pro_price");
 
   let row: SubscriptionRow;
   if (first) {
-    row = mapSubscription(first);
-  } else if (target.deleted && match.currentSubscriptionId === target.subscriptionId) {
+    row = rowFromStripe(first, proPriceId);
+  } else if (target.deleted && isStored) {
     row = endedRow(target.customerId ?? match.currentCustomerId);
   } else {
     return await markProcessed();
@@ -210,6 +241,12 @@ async function handle(request: Request): Promise<Response> {
   if (row.plan === "free" && row.stripe_customer_id === null) row.stripe_customer_id = match.currentCustomerId;
 
   const decision = decideWrite(row, match.currentSubscriptionId, target.subscriptionId!);
+  if (decision === "ignore_second" && first) {
+    // A second paid subscription for an owner who already has one (MEDIUM-2 of Phase 16): refund and cancel it.
+    const outcome = await cancelExtraSubscription(stripe, first, match.currentSubscriptionId!);
+    if (outcome === "retry") return tryAgain();
+    return await skip(outcome === "cancelled" ? "ignore_second_cancelled" : "ignore_second");
+  }
   if (decision !== "save") return await skip(decision);
 
   if (!(await saveRow(admin, match.ownerId, row))) return tryAgain();
@@ -217,13 +254,55 @@ async function handle(request: Request): Promise<Response> {
   // Two different messages (for example updated and deleted) can run at once and each read an older state.
   // Ask Stripe again and correct the row if it moved meanwhile (twice at most).
   for (let round = 0; round < 2; round++) {
-    const fresh = await fetchSubscription(target.subscriptionId!);
+    const fresh = await fetchSubscription(stripe, target.subscriptionId!);
     if (fresh === "error") return tryAgain();
-    if (!fresh || !containsProPrice(fresh, proPriceId)) break;
-    const next = mapSubscription(fresh);
+    if (!fresh) break;
+    const next = rowFromStripe(fresh, proPriceId);
+    if (next.plan === "free" && next.stripe_customer_id === null) next.stripe_customer_id = row.stripe_customer_id;
     if (sameRow(next, row)) break;
     if (!(await saveRow(admin, match.ownerId, next))) return tryAgain();
     row = next;
   }
   return await markProcessed();
+}
+
+const LIVE_STATES = new Set(["active", "trialing", "past_due", "unpaid", "paused"]);
+
+/**
+ * The owner already has a stored subscription and a different Pro subscription showed up (two checkouts
+ * in two tabs). The extra one is refunded (its latest paid invoice) and cancelled at once, so nobody is
+ * billed twice with nothing pointing at it. Only done while the stored subscription is really live in
+ * Stripe; otherwise the answer is "retry" (the end of the stored one may simply not be processed yet).
+ * Refund first, with a fixed idempotency key: a retry after a half-done run cannot refund twice and a
+ * failed refund leaves the subscription alive, so the next delivery tries again.
+ */
+async function cancelExtraSubscription(
+  stripe: Stripe,
+  extra: Stripe.Subscription,
+  storedId: string,
+): Promise<"cancelled" | "retry" | "nothing"> {
+  const stored = await fetchSubscription(stripe, storedId);
+  if (stored === "error") return "retry";
+  if (!stored || !LIVE_STATES.has(stored.status)) return "retry";
+  if (!LIVE_STATES.has(extra.status) && extra.status !== "incomplete") return "nothing"; // already over
+  try {
+    const invoiceId = typeof extra.latest_invoice === "string" ? extra.latest_invoice : (extra.latest_invoice?.id ?? null);
+    if (invoiceId) {
+      const payments = await stripe.invoicePayments.list({ invoice: invoiceId, status: "paid", limit: 5 });
+      for (const p of payments.data) {
+        const pi = p.payment.payment_intent;
+        const piId = typeof pi === "string" ? pi : (pi?.id ?? null);
+        if (!piId) continue;
+        await stripe.refunds.create({ payment_intent: piId }, { idempotencyKey: `slotmate-extra-refund-${piId}` });
+      }
+    }
+    await stripe.subscriptions.cancel(extra.id, { prorate: false, invoice_now: false });
+  } catch (error) {
+    if (error instanceof ConfigError) throw error;
+    const code = (error as { code?: string } | null)?.code ?? null;
+    logFailure("cancel_extra_subscription", { code });
+    return code === "resource_missing" ? "nothing" : "retry";
+  }
+  console.error("stripe webhook cancelled an extra subscription", { step: "extra_subscription_cancelled", code: null });
+  return "cancelled";
 }

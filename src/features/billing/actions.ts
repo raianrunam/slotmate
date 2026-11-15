@@ -1,12 +1,12 @@
 "use server";
 
 import "server-only";
-import { redirect } from "next/navigation";
-import { isRedirectError } from "next/dist/client/components/redirect-error";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { requireOwner } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getEnv } from "@/lib/env";
 import { getProPriceId, getStripe } from "@/lib/stripe/client";
+import { containsProPrice } from "@/features/billing/schema";
 
 // Server Actions for paying and managing the plan (BILL-04, BILL-08, BILL-09, D23).
 //
@@ -22,8 +22,6 @@ const BILLING = "/dashboard/billing";
 // Stripe subscription states that mean "already paying (or about to)": never start another.
 const LIVE = new Set(["active", "trialing", "past_due", "unpaid", "paused", "incomplete"]);
 
-// redirect() works by throwing; it must not be mistaken for a Stripe failure.
-const isRedirect = (e: unknown) => isRedirectError(e);
 
 function fail(code: "checkout" | "portal" | "already_pro" | "no_customer"): never {
   redirect(`${BILLING}?error=${code}`);
@@ -53,9 +51,9 @@ export async function startCheckout(): Promise<void> {
     if (customer) {
       try {
         const live = await stripe.subscriptions.list({ customer, status: "all", limit: 10 });
-        if (live.data.some((s) => LIVE.has(s.status))) fail("already_pro");
+        if (live.data.some((s) => LIVE.has(s.status) && containsProPrice(s, getProPriceId()))) fail("already_pro");
       } catch (e) {
-        if (isRedirect(e)) throw e;
+        unstable_rethrow(e); // lets redirect() through (documented Next.js API)
         // A customer deleted in Stripe cannot be reused: start again with a fresh one.
         if ((e as { code?: string })?.code === "resource_missing") customer = null;
         else throw e;
@@ -75,7 +73,7 @@ export async function startCheckout(): Promise<void> {
       });
     url = (await create(customer)).url;
   } catch (e) {
-    if (isRedirect(e)) throw e;
+    unstable_rethrow(e); // lets redirect() through (documented Next.js API)
     console.error("startCheckout failed", { step: "create_session", code: (e as { code?: string })?.code ?? null });
   }
   if (!url) fail("checkout");
