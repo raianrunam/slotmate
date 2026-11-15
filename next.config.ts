@@ -1,33 +1,13 @@
 import type { NextConfig } from "next";
+import { securityHeaderRules } from "./src/lib/security-headers";
 
 const nextConfig: NextConfig = {
   /* config options here */
   // Clickjacking and sniffing protection on every page except the embeddable
   // widget, which must be framable by owners' websites (EMBED-*).
   async headers() {
-    return [
-      {
-        // The private status page (A8): never cached, never reveals its address to other sites.
-        source: "/booking/:code",
-        headers: [
-          { key: "Cache-Control", value: "private, no-store, max-age=0" },
-          { key: "Referrer-Policy", value: "no-referrer" },
-          { key: "X-Robots-Tag", value: "noindex, nofollow" },
-          { key: "X-Frame-Options", value: "DENY" },
-          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
-          { key: "X-Content-Type-Options", value: "nosniff" },
-        ],
-      },
-      {
-        source: "/((?!embed/|booking/).*)",
-        headers: [
-          { key: "X-Frame-Options", value: "DENY" },
-          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-        ],
-      },
-    ];
+    // The rules live in a plain module so a unit test can check them (Phase 14).
+    return securityHeaderRules;
   },
   // Resource images are uploaded through a Server Action (S1). The default body
   // limit is 1 MB; an image may be 2 MB (2,097,152 bytes), so the limit is 2200 kB
