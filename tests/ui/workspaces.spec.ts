@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { serviceClient } from "../db/helpers";
 import { LOGGED_OUT } from "./owner";
-import { addWorkspace, cleanupOwners, logIn, newOwner, tag } from "./owners";
+import { addResource, addWorkspace, cleanupOwners, forgeOnSubmit, listOwnerFiles, logIn, newOwner, PNG_BYTES, tag } from "./owners";
 
 // Workspace management checks (Phase 8: WORK-01 to WORK-04, D12, D13, D20).
 // Every test uses its OWN throw-away owner, logged in through the real login
@@ -382,20 +382,11 @@ test.describe("another owner's workspace and forged fields (the server refuses) 
 
     await page.goto(`/dashboard/workspaces/${ownId}`);
     await nameField(page).fill("Hacked name");
-    await page.evaluate(
-      ({ foreignId, ownerId }) => {
-        const form = document.querySelector<HTMLFormElement>("form:has(input[name=id])")!;
-        form.querySelector<HTMLInputElement>("input[name=id]")!.value = foreignId;
-        for (const [name, value] of [["owner_id", ownerId], ["is_locked", "false"]]) {
-          const input = document.createElement("input");
-          input.type = "hidden";
-          input.name = name;
-          input.value = value;
-          form.appendChild(input);
-        }
-      },
-      { foreignId, ownerId: owner.id },
-    );
+    await forgeOnSubmit(page, "form:has(input[name=id])", {
+      id: foreignId,
+      owner_id: owner.id,
+      is_locked: "false",
+    });
     await page.getByRole("button", { name: "Save changes" }).click();
 
     await expect(page.getByText(/cannot make this change/i)).toBeVisible();
@@ -406,22 +397,27 @@ test.describe("another owner's workspace and forged fields (the server refuses) 
     expect(mine.name, "the owner's own workspace is unchanged too").toBe("My workspace");
   });
 
-  test("delete with a foreign id deletes nothing and shows the generic message", async ({ page }) => {
+  test("delete with a foreign id deletes nothing (rows or image files) and shows the generic message", async ({ page }) => {
     const victim = await newOwner();
     const foreignId = await addWorkspace(victim, "Victim workspace", `victim-${tag()}`);
+    // The victim's workspace holds a resource with an image file.
+    const resourceId = await addResource(victim, foreignId, "Victim room");
+    const victimPath = `${victim.id}/${resourceId}/${crypto.randomUUID()}.png`;
+    const service = serviceClient();
+    expect((await service.storage.from("resource-images").upload(victimPath, PNG_BYTES, { contentType: "image/png" })).error).toBeNull();
+    expect((await service.rpc("set_resource_image", { p_owner_id: victim.id, p_resource_id: resourceId, p_path: victimPath })).error).toBeNull();
     const owner = await newOwner();
     await addWorkspace(owner, "My workspace", `mine-${tag()}`);
     await logIn(page, owner);
 
     await page.goto("/dashboard/workspaces");
     await page.getByRole("button", { name: "Delete workspace My workspace" }).click();
-    await page.evaluate((foreignId) => {
-      document.querySelector<HTMLInputElement>("form input[name=id]")!.value = foreignId;
-    }, foreignId);
+    await forgeOnSubmit(page, "form:has(input[name=id])", { id: foreignId });
     await page.getByRole("alertdialog").getByRole("button", { name: "Delete workspace", exact: true }).click();
 
     await expect(page.getByText(/cannot make this change/i)).toBeVisible();
     expect(await storedWorkspaces(victim.id), "the foreign workspace still exists").toHaveLength(1);
     expect(await storedWorkspaces(owner.id), "and the owner's own was not deleted either").toHaveLength(1);
+    expect(await listOwnerFiles(victim.id), "the victim's image file still exists").toEqual([victimPath]);
   });
 });

@@ -15,10 +15,12 @@ import { initialResourceState, type ResourceFormState } from "@/features/resourc
 // the size and the file's real signature again (S1).
 export function ImageSection({
   resourceId,
+  resourceName,
   imageUrl,
   locked,
 }: {
   resourceId: string;
+  resourceName: string;
   /** The public address of the current image, or null. */
   imageUrl: string | null;
   locked: boolean;
@@ -47,7 +49,7 @@ export function ImageSection({
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={imageUrl}
-          alt="Current resource image"
+          alt={`Image of ${resourceName}`}
           data-testid="resource-image"
           className="max-h-60 w-full max-w-sm rounded-lg border border-border object-cover"
         />

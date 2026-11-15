@@ -74,7 +74,7 @@ async function ResourceContent({ params, searchParams }: Props) {
               <dd>{resource.description ?? "No description."}</dd>
             </div>
           </dl>
-          <ImageSection resourceId={resource.id} imageUrl={imageUrl} locked />
+          <ImageSection resourceId={resource.id} resourceName={resource.name} imageUrl={imageUrl} locked />
         </section>
       ) : (
         <>
@@ -89,7 +89,7 @@ async function ResourceContent({ params, searchParams }: Props) {
               isAvailable: resource.is_available,
             }}
           />
-          <ImageSection resourceId={resource.id} imageUrl={imageUrl} locked={false} />
+          <ImageSection resourceId={resource.id} resourceName={resource.name} imageUrl={imageUrl} locked={false} />
         </>
       )}
 

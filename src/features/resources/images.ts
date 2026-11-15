@@ -111,14 +111,20 @@ export async function removeResourceFiles(ownerId: string, resourceIds: readonly
     for (const resourceId of resourceIds) {
       const folder = imageFolder(ownerId, resourceId);
       // A resource has at most a couple of files; loop in case a folder holds more than one page.
-      for (let guard = 0; guard < 20; guard++) {
+      let empty = false;
+      for (let guard = 0; guard < 20 && !empty; guard++) {
         const listed = await storage.list(folder, { limit: 100 });
         if (listed.error) throw new Error("list failed");
         const names = (listed.data ?? []).filter((f) => f.name).map((f) => `${folder}/${f.name}`);
-        if (names.length === 0) break;
+        if (names.length === 0) {
+          empty = true;
+          break;
+        }
         const removed = await storage.remove(names);
         if (removed.error) throw new Error("remove failed");
       }
+      // Never report success while files may remain (the caller would delete the rows).
+      if (!empty) throw new Error("folder not empty");
     }
     return true;
   } catch {

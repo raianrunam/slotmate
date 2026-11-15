@@ -113,3 +113,34 @@ export const PNG_BYTES = Buffer.from(
 );
 /** A different valid PNG file (same picture, extra trailing byte) so a replace really changes the file. */
 export const PNG_BYTES_2 = Buffer.concat([PNG_BYTES, Buffer.from([0])]);
+
+/**
+ * Simulates a tampered request: right before a matching form is submitted, the
+ * given field values are written into it (added if missing). Done at submit time
+ * (capture phase) so a React re-render cannot undo it.
+ */
+export async function forgeOnSubmit(page: Page, formSelector: string, fields: Record<string, string>) {
+  await page.evaluate(
+    ({ formSelector, fields }) => {
+      document.addEventListener(
+        "submit",
+        (event) => {
+          const form = event.target as HTMLFormElement;
+          if (!form.matches(formSelector)) return;
+          for (const [name, value] of Object.entries(fields)) {
+            let input = form.querySelector<HTMLInputElement>('input[name="' + name + '"]');
+            if (!input) {
+              input = document.createElement("input");
+              input.type = "hidden";
+              input.name = name;
+              form.appendChild(input);
+            }
+            input.value = value;
+          }
+        },
+        true,
+      );
+    },
+    { formSelector, fields },
+  );
+}

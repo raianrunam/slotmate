@@ -95,7 +95,12 @@ export async function listResources(requestedPage: number, workspaceId?: string)
 
 export async function getResource(id: string): Promise<ResourceRow | null> {
   const supabase = await createClient();
-  const { data } = await supabase.from("resources").select(COLUMNS).eq("id", id).maybeSingle();
+  const { data, error } = await supabase.from("resources").select(COLUMNS).eq("id", id).maybeSingle();
+  if (error) {
+    // A failed read must not look like "not found".
+    console.error("getResource failed", { code: error.code });
+    throw new Error("Could not load this resource.");
+  }
   return (data as unknown as ResourceRow | null) ?? null;
 }
 

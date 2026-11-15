@@ -5,6 +5,7 @@ import {
   addResource,
   addWorkspace,
   cleanupOwners,
+  forgeOnSubmit,
   listOwnerFiles,
   listResourceFiles,
   logIn,
@@ -41,6 +42,15 @@ async function storedResources(ownerId: string) {
 }
 
 const png = (bytes = PNG_BYTES, name = "photo.png") => ({ name, mimeType: "image/png", buffer: bytes });
+
+// Puts an image in place for a resource the way the app does it (server key), for the victim tests.
+async function giveImage(ownerId: string, resourceId: string): Promise<string> {
+  const service = serviceClient();
+  const path = `${ownerId}/${resourceId}/${crypto.randomUUID()}.png`;
+  expect((await service.storage.from("resource-images").upload(path, PNG_BYTES, { contentType: "image/png" })).error).toBeNull();
+  expect((await service.rpc("set_resource_image", { p_owner_id: ownerId, p_resource_id: resourceId, p_path: path })).error).toBeNull();
+  return path;
+}
 
 async function setup(page: Page, resources = 1) {
   const owner = await newOwner();
@@ -248,7 +258,11 @@ test.describe("image (RES-05, D9, S1)", () => {
     expect(await listResourceFiles(owner.id, ids[0]), "the file is gone").toEqual([]);
   });
 
-  test("a file over 2 MB is refused and nothing is stored", async ({ page }) => {
+  // NOTE: the browser form refuses a file over 2 MB BEFORE sending it (so nobody uploads
+  // 50 MB for nothing), so this test proves the user-visible behaviour. The SERVER's own
+  // 2 MB check (size, then real bytes) is proved by tests/unit/resources.spec.ts
+  // (checkImageBytes at 2 MB and 2 MB + 1 byte, and the order of checks in the action).
+  test("a file over 2 MB is refused (browser guard) and nothing is stored", async ({ page }) => {
     const { owner, ids } = await setup(page);
     await page.goto(`/dashboard/resources/${ids[0]}`);
     const big = Buffer.concat([PNG_BYTES, Buffer.alloc(2 * 1024 * 1024)]); // 2 MB + 70 bytes
@@ -395,20 +409,13 @@ test.describe("another owner's resource and forged fields (the server refuses)",
 
     await page.goto(`/dashboard/resources/${ids[0]}`);
     await nameField(page).fill("Hacked name");
-    await page.evaluate(
-      ({ foreignId, ownerId, ws }) => {
-        const form = document.querySelector<HTMLFormElement>("form:has(input[name=id])")!;
-        form.querySelector<HTMLInputElement>("input[name=id]")!.value = foreignId;
-        for (const [name, value] of [["owner_id", ownerId], ["workspace_id", ws], ["is_locked", "false"], ["image_path", "x/y/z.png"]]) {
-          const input = document.createElement("input");
-          input.type = "hidden";
-          input.name = name;
-          input.value = value;
-          form.appendChild(input);
-        }
-      },
-      { foreignId, ownerId: owner.id, ws },
-    );
+    await forgeOnSubmit(page, "form:has(input[name=id]):not(:has(input[name=image]))", {
+      id: foreignId,
+      owner_id: owner.id,
+      workspace_id: ws,
+      is_locked: "false",
+      image_path: "x/y/z.png",
+    });
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(page.getByText(/cannot make this change/i)).toBeVisible();
 
@@ -417,17 +424,37 @@ test.describe("another owner's resource and forged fields (the server refuses)",
     expect((await storedResources(owner.id))[0].name, "the owner's own resource is unchanged too").toBe("Room 1");
   });
 
-  test("delete with a foreign id deletes nothing", async ({ page }) => {
+  test("delete with a foreign id deletes nothing, not even the victim's image file", async ({ page }) => {
     const { other, id: foreignId } = await victim();
+    const victimPath = await giveImage(other.id, foreignId);
     await setup(page);
     await page.goto("/dashboard/resources");
     await page.getByRole("button", { name: "Delete resource Room 1" }).click();
-    await page.evaluate((foreignId) => {
-      document.querySelector<HTMLInputElement>("form input[name=id]")!.value = foreignId;
-    }, foreignId);
+    await forgeOnSubmit(page, "form:has(input[name=id])", { id: foreignId });
     await page.getByRole("alertdialog").getByRole("button", { name: "Delete resource", exact: true }).click();
     await expect(page.getByText(/cannot make this change/i)).toBeVisible();
     expect(await storedResources(other.id), "the foreign resource still exists").toHaveLength(1);
+    expect(await listOwnerFiles(other.id), "the victim's image file still exists").toEqual([victimPath]);
+  });
+
+  test("forged owner_id, workspace_id, is_locked and image_path on the owner's OWN resource are ignored", async ({ page }) => {
+    const { other, ws: foreignWs } = await victim();
+    const { owner, workspaceId, ids } = await setup(page);
+    await page.goto(`/dashboard/resources/${ids[0]}`);
+    await nameField(page).fill("Edited normally");
+    await forgeOnSubmit(page, "form:has(input[name=id]):not(:has(input[name=image]))", {
+      owner_id: other.id,
+      workspace_id: foreignWs,
+      is_locked: "true",
+      image_path: "evil/evil/evil.png",
+    });
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page).toHaveURL(/notice=saved/);
+    const [mine] = await storedResources(owner.id);
+    expect(mine).toMatchObject({ id: ids[0], name: "Edited normally", workspace_id: workspaceId, image_path: null });
+    expect(await storedResources(other.id), "nothing moved to the other owner").toHaveLength(1);
+    const lock = await serviceClient().from("resources").select("is_locked, owner_id").eq("id", ids[0]).single();
+    expect(lock.data).toEqual({ is_locked: false, owner_id: owner.id });
   });
 
   test("image upload and image removal with a foreign id store and remove nothing", async ({ page }) => {
@@ -443,9 +470,7 @@ test.describe("another owner's resource and forged fields (the server refuses)",
     await page.goto(`/dashboard/resources/${ids[0]}`);
     // Upload with a tampered id.
     await page.getByLabel("Upload an image").setInputFiles(png());
-    await page.evaluate((foreignId) => {
-      document.querySelector<HTMLInputElement>("form:has(input[name=image]) input[name=id]")!.value = foreignId;
-    }, foreignId);
+    await forgeOnSubmit(page, "form:has(input[name=image])", { id: foreignId });
     await page.getByRole("button", { name: "Upload image" }).click();
     await expect(page.getByTestId("image-message")).toContainText("cannot make this change");
     expect(await listOwnerFiles(owner.id), "nothing stored for the attacker").toEqual([]);
@@ -455,10 +480,7 @@ test.describe("another owner's resource and forged fields (the server refuses)",
     await page.getByLabel("Upload an image").setInputFiles(png());
     await page.getByRole("button", { name: "Upload image" }).click();
     await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
-    await page.evaluate((foreignId) => {
-      const remove = [...document.querySelectorAll("form")].find((f) => f.textContent?.includes("Remove image"))!;
-      remove.querySelector<HTMLInputElement>("input[name=id]")!.value = foreignId;
-    }, foreignId);
+    await forgeOnSubmit(page, "form:has(input[name=intent])", { id: foreignId });
     await page.getByRole("button", { name: "Remove image" }).click();
     await expect(page.getByTestId("image-message")).toContainText("cannot make this change");
 
