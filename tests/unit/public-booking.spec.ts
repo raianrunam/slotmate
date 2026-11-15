@@ -245,8 +245,8 @@ test.describe("source guards for the public booking feature", () => {
     const page = read("src/app/booking/[code]/page.tsx");
     expect(page).toMatch(/robots: \{ index: false, follow: false \}/);
     expect(page).toMatch(/referrer: "no-referrer"/);
-    const config = read("next.config.ts");
-    expect(config).toMatch(/source: "\/booking\/:code"/);
+    const config = read("src/lib/security-headers.ts"); // the rules moved here in Phase 14 (next.config.ts imports them)
+    expect(config).toMatch(/BOOKING_SOURCE = "\/booking\/:code"/);
     expect(config).toMatch(/no-store/);
     expect(config).toMatch(/\{ key: "Referrer-Policy", value: "no-referrer" \}/);
   });

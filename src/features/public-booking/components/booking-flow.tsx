@@ -64,12 +64,16 @@ export function BookingFlow({
   zoneLabel,
   minDate,
   maxDate,
+  embed,
 }: {
   resources: FlowResource[];
   zoneLabel: string;
   minDate: string;
   maxDate: string;
+  /** Widget mode (Phase 14): a single column unless layout is "grid", and a success panel with a status link that opens in a new tab. Left out on the public page. */
+  embed?: { layout: "list" | "grid" };
 }) {
+  const [statusPath, setStatusPath] = useState<string | null>(null);
   const [resourceId, setResourceId] = useState(resources.length === 1 ? resources[0].id : "");
   const [date, setDate] = useState("");
   const [startsAt, setStartsAt] = useState("");
@@ -137,6 +141,7 @@ export function BookingFlow({
 
     const formData = new FormData();
     for (const name of FIELD_NAMES) formData.set(name, raw[name]);
+    if (embed) formData.set("embed", "1");
     startTransition(async () => {
       let answer: BookingFormState;
       try {
@@ -147,6 +152,11 @@ export function BookingFlow({
         const digest = typeof error === "object" && error !== null && "digest" in error ? String((error as { digest: unknown }).digest) : "";
         if (digest.startsWith("NEXT_REDIRECT")) throw error;
         setFormError({ kind: "unknown", message: "Something went wrong. Please check your connection and try again." });
+        return;
+      }
+      if (answer.status === "submitted") {
+        // Only a path that starts with the status page's own address is ever shown as a link.
+        if (/^\/booking\/[A-Za-z0-9_-]{43}\?submitted=1$/.test(answer.statusPath)) setStatusPath(answer.statusPath);
         return;
       }
       if (answer.status !== "error") return;
@@ -164,15 +174,37 @@ export function BookingFlow({
     });
   }
 
+  if (statusPath) {
+    return (
+      <div role="status" className="grid gap-3 rounded-lg border border-border bg-card p-4" data-testid="embed-submitted">
+        <h2 className="font-heading text-lg font-medium">Request sent</h2>
+        <p className="text-sm text-muted-foreground">
+          Your booking request was sent. Open your private status page to save the link and see whether it was approved.
+          We do not send emails, so keep that link.
+        </p>
+        <Button asChild className="h-11 w-full sm:w-fit">
+          <a href={statusPath} target="_blank" rel="noopener noreferrer" data-testid="embed-status-link">
+            Open my status page (new tab)
+          </a>
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <form onSubmit={onSubmit} noValidate className="grid gap-6 lg:grid-cols-[1fr_22rem] lg:items-start" data-testid="booking-flow">
+    <form
+      onSubmit={onSubmit}
+      noValidate
+      className={cn("grid gap-6", embed ? "" : "lg:grid-cols-[1fr_22rem] lg:items-start")}
+      data-testid="booking-flow"
+    >
       <div className="grid gap-6">
         {/* 1. resource */}
         <section aria-labelledby="step-resource-heading" className="grid gap-3">
           <h2 id="step-resource-heading" className="font-heading text-lg font-medium">
             1. Choose a resource
           </h2>
-          <ul id="step-resource" tabIndex={-1} aria-label="Resources" className="grid gap-3 outline-none sm:grid-cols-2">
+          <ul id="step-resource" tabIndex={-1} aria-label="Resources" className={cn("grid gap-3 outline-none", embed?.layout === "list" ? "" : "sm:grid-cols-2")}>
             {resources.map((r) => {
               const selected = r.id === resourceId;
               return (
