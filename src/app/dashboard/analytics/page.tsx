@@ -1,97 +1,111 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { LockIcon } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Suspense } from "react";
+import { LayoutDashboardIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/empty-state";
 import { OwnerGate } from "@/components/owner-gate";
 import { PageHeader } from "@/components/page-header";
-import { PlaceholderNotice } from "@/components/placeholder-notice";
+import { AnalyticsFilters } from "@/features/analytics/components/analytics-filters";
+import { AnalyticsSkeleton, AnalyticsView } from "@/features/analytics/components/analytics-view";
+import {
+  dayLabel,
+  defaultRange,
+  parseRange,
+  parseWorkspaceParam,
+  pickWorkspace,
+  first,
+  type AnalyticsAccess,
+  type SearchParamValue,
+} from "@/features/analytics/aggregate";
+import { getAnalytics, getAnalyticsAccess, listAnalyticsWorkspaces, type AnalyticsWorkspace } from "@/features/analytics/queries";
+import { todayInZone } from "@/lib/time/slots";
 
 export const metadata: Metadata = { title: "Analytics" };
 
-// Bar heights are sample values, not data.
-const BARS = [30, 55, 40, 70, 50, 85, 60] as const;
+type SearchParams = Promise<{ workspace?: SearchParamValue; from?: SearchParamValue; to?: SearchParamValue }>;
 
-function ChartSketch() {
-  return (
-    <div
-      aria-hidden="true"
-      className="flex h-40 items-end gap-2 rounded-lg border border-dashed border-border bg-muted/30 p-3"
-    >
-      {BARS.map((h, i) => (
-        <span key={i} className="flex-1 rounded-t bg-primary/60" style={{ height: `${h}%` }} />
-      ))}
-    </div>
-  );
+// The data part: loaded behind a Suspense boundary so the page frame and the filters show at once.
+async function AnalyticsData({
+  workspace,
+  access,
+  rawFrom,
+  rawTo,
+}: {
+  workspace: AnalyticsWorkspace;
+  access: AnalyticsAccess;
+  rawFrom: string | undefined;
+  rawTo: string | undefined;
+}) {
+  // Only a Pro owner may choose a period (ANLT-06); a Free owner's from/to in the address are ignored.
+  const parsed = access.rangeFilter
+    ? parseRange(rawFrom, rawTo, workspace.timeZone)
+    : { range: defaultRange(workspace.timeZone), error: null, custom: false };
+  const result = await getAnalytics({ workspace, range: parsed.range, access });
+  const periodText = `${dayLabel(parsed.range.from)} to ${dayLabel(parsed.range.to)} ${parsed.range.to.slice(0, 4)} (${workspace.timeZone}).`;
+  return <AnalyticsView data={result.data} access={access} rangeError={parsed.error} truncated={result.truncated} periodText={periodText} />;
 }
 
-// A Pro-only area: locked, with an upgrade prompt (ANLT-03/04/06).
-function LockedCard({ title, description }: { title: string; description: string }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          {title} <Badge variant="secondary">Pro</Badge>
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid place-items-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
-          <LockIcon className="size-6 text-muted-foreground" aria-hidden="true" />
-          <p className="max-w-xs text-sm text-muted-foreground">
-            This chart is part of the Pro plan. Free owners see this locked area instead of data.
-          </p>
-          <Button asChild className="h-10 sm:h-8">
-            <Link href="/dashboard/billing">Upgrade to Pro</Link>
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+async function AnalyticsContent({ searchParams }: { searchParams: SearchParams }) {
+  const raw = await searchParams;
+  const workspaces = await listAnalyticsWorkspaces();
+  const header = (
+    <PageHeader
+      title="Analytics"
+      description="Booking requests per day and by status. Pro adds monthly and per-resource views and a date range."
+    />
   );
-}
 
-function AnalyticsContent() {
+  if (workspaces.length === 0) {
+    return (
+      <>
+        {header}
+        <EmptyState
+          icon={LayoutDashboardIcon}
+          title="Create a workspace first"
+          description="Analytics are shown for one workspace. Create a workspace and share its booking page to start collecting requests."
+          action={
+            <Button asChild className="h-10 sm:h-8">
+              <Link href="/dashboard/workspaces">Go to workspaces</Link>
+            </Button>
+          }
+        />
+      </>
+    );
+  }
+
+  // Only the owner's own workspaces can be chosen; an unknown or foreign id falls back to the first one.
+  const workspace = pickWorkspace(workspaces, parseWorkspaceParam(raw.workspace)) ?? workspaces[0];
+  const access = await getAnalyticsAccess();
+  const rawFrom = first(raw.from);
+  const rawTo = first(raw.to);
+  const shown = access.rangeFilter
+    ? parseRange(rawFrom, rawTo, workspace.timeZone)
+    : { range: defaultRange(workspace.timeZone), custom: false };
+
   return (
     <>
-      <PageHeader
-        title="Analytics"
-        description="Booking requests per day and by status. Pro adds monthly and per-resource views."
+      {header}
+      <AnalyticsFilters
+        workspaces={workspaces.map((w) => ({ id: w.id, name: w.name }))}
+        selectedId={workspace.id}
+        rangeFilter={access.rangeFilter}
+        range={shown.range}
+        custom={shown.custom}
+        maxDate={todayInZone(workspace.timeZone)}
       />
-      <PlaceholderNotice phase="Phase 13">
-        The charts are sketches: they are drawn with sample bar heights and read no data.
-      </PlaceholderNotice>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Requests per day</CardTitle>
-            <CardDescription>The last 30 days (Free plan).</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChartSketch />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Requests by status</CardTitle>
-            <CardDescription>Pending, approved, rejected and cancelled.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChartSketch />
-          </CardContent>
-        </Card>
-        <LockedCard title="Requests per month" description="One bar per month." />
-        <LockedCard title="Resource usage" description="Which resources get the most requests, with date filters." />
-      </div>
+      <Suspense key={`${workspace.id}|${rawFrom ?? ""}|${rawTo ?? ""}`} fallback={<AnalyticsSkeleton />}>
+        <AnalyticsData workspace={workspace} access={access} rawFrom={rawFrom} rawTo={rawTo} />
+      </Suspense>
     </>
   );
 }
 
 // Every dashboard page checks the owner first (A3 layer 2). A unit test enforces this.
-export default function AnalyticsPage() {
+export default function AnalyticsPage({ searchParams }: { searchParams: SearchParams }) {
   return (
     <OwnerGate>
-      <AnalyticsContent />
+      <AnalyticsContent searchParams={searchParams} />
     </OwnerGate>
   );
 }
