@@ -17,9 +17,14 @@ const OWNER = "11111111-1111-4111-8111-111111111111";
 const RESOURCE = "22222222-2222-4222-8222-222222222222";
 const RANDOM = "33333333-3333-4333-8333-333333333333";
 
-const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46]);
-const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
-const webp = Uint8Array.from([0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x45, 0x42, 0x50, 0x56]);
+// Minimal files with the structure the checks look for (not necessarily decodable).
+const ascii = (t: string) => [...t].map((c) => c.charCodeAt(0));
+const padTo = (bytes: number[], n: number) => Uint8Array.from([...bytes, ...new Array(Math.max(0, n - bytes.length)).fill(0)]);
+const jpeg = padTo([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, ...ascii("JFIF")], 24);
+const png = padTo([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, ...ascii("IHDR")], 40);
+const webpWith = (chunk: string, total = 30, riffSize = total - 8) =>
+  padTo([...ascii("RIFF"), riffSize & 255, (riffSize >> 8) & 255, (riffSize >> 16) & 255, 0, ...ascii("WEBP"), ...ascii(chunk)], total);
+const webp = webpWith("VP8 ");
 
 test.describe("resource schema (RES-04, RES-07, RES-08)", () => {
   test("accepts valid values; the checkbox becomes a boolean", () => {
@@ -62,6 +67,31 @@ test.describe("image validation by size and file signature (RES-05, S1)", () => 
     expect(detectImageType(jpeg)).toEqual({ ext: "jpg", contentType: "image/jpeg" });
     expect(detectImageType(png)).toEqual({ ext: "png", contentType: "image/png" });
     expect(detectImageType(webp)).toEqual({ ext: "webp", contentType: "image/webp" });
+    expect(detectImageType(webpWith("VP8L"))).toMatchObject({ ext: "webp" });
+    expect(detectImageType(webpWith("VP8X"))).toMatchObject({ ext: "webp" });
+  });
+  test("stricter structure: marker byte, IHDR, WebP size and chunk, minimum sizes (Phase 9 review finding 8)", () => {
+    const cases: [string, Uint8Array][] = [
+      ["JPEG signature but marker byte 00", padTo([0xff, 0xd8, 0xff, 0x00], 24)],
+      ["JPEG signature but marker byte FF", padTo([0xff, 0xd8, 0xff, 0xff], 24)],
+      ["JPEG only 19 bytes", padTo([0xff, 0xd8, 0xff, 0xe0], 19)],
+      ["PNG signature but no IHDR chunk", padTo([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, ...ascii("IDAT")], 40)],
+      ["PNG signature but wrong first chunk length", padTo([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x01, ...ascii("IHDR")], 40)],
+      ["PNG only 32 bytes", png.slice(0, 32)],
+      ["WebP with an unknown chunk", webpWith("ABCD")],
+      ["WebP whose declared size is larger than the file (cut off)", webpWith("VP8 ", 30, 500)],
+      ["WebP whose declared size is too small", webpWith("VP8 ", 30, 4)],
+      ["WebP only 19 bytes", webp.slice(0, 19)],
+    ];
+    for (const [label, bytes] of cases) {
+      expect(detectImageType(bytes), label).toBeNull();
+      expect(checkImageBytes(bytes).ok, label).toBe(false);
+    }
+    // Trailing bytes after the declared size are still accepted (some encoders pad).
+    expect(detectImageType(webpWith("VP8 ", 40, 22))).toMatchObject({ ext: "webp" });
+    // Exactly the minimum sizes pass.
+    expect(detectImageType(jpeg.slice(0, 20))).toMatchObject({ ext: "jpg" });
+    expect(detectImageType(png.slice(0, 33))).toMatchObject({ ext: "png" });
   });
   test("refuses text, HTML, SVG, GIF, an empty file and a RIFF that is not WebP", () => {
     const enc = (s: string) => new TextEncoder().encode(s);
@@ -70,7 +100,7 @@ test.describe("image validation by size and file signature (RES-05, S1)", () => 
       ["html", enc("<html><script>alert(1)</script></html>")],
       ["svg", enc('<svg xmlns="http://www.w3.org/2000/svg"></svg>')],
       ["gif", enc("GIF89a....")],
-      ["riff wave", Uint8Array.from([0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x41, 0x56, 0x45])],
+      ["riff wave", padTo([0x52, 0x49, 0x46, 0x46, 22, 0, 0, 0, 0x57, 0x41, 0x56, 0x45], 30)],
       ["truncated png", png.slice(0, 5)],
     ] as const) {
       expect(detectImageType(bytes), label).toBeNull();

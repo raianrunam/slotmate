@@ -115,26 +115,97 @@ export async function deleteCreatedOwners(): Promise<void> {
   }
 }
 
-/**
- * Safety net used by global teardown: deletes any leftover user whose email
- * looks like a test user. Returns how many were deleted.
- */
-export async function sweepTestUsers(): Promise<number> {
+const IMAGE_BUCKET = 'resource-images'
+
+/** Every file path under a prefix in the image bucket, at any depth (names only). */
+async function bucketFilesUnder(prefix: string): Promise<string[]> {
+  const storage = serviceClient().storage.from(IMAGE_BUCKET)
+  const { data, error } = await storage.list(prefix, { limit: 1000 })
+  if (error) throw new Error(`storage list failed: ${error.message}`)
+  const out: string[] = []
+  for (const entry of data ?? []) {
+    const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`
+    if (entry.id) out.push(path) // a file
+    else out.push(...(await bucketFilesUnder(path))) // a folder
+  }
+  return out
+}
+
+async function allUsers(): Promise<{ id: string; email: string | undefined }[]> {
   const service = serviceClient()
-  let deleted = 0
+  const out: { id: string; email: string | undefined }[] = []
   for (let page = 1; page < 50; page++) {
     const { data, error } = await service.auth.admin.listUsers({ page, perPage: 200 })
     if (error) throw new Error(`auth.admin.listUsers failed: ${error.message}`)
-    const users = data.users
-    for (const user of users) {
-      if (user.email && TEST_EMAIL.test(user.email)) {
-        await deleteOwner(user.id)
-        deleted++
-      }
+    out.push(...data.users.map((u) => ({ id: u.id, email: u.email })))
+    if (data.users.length < 200) break
+  }
+  return out
+}
+
+/**
+ * Safety net used by global teardown: deletes any leftover user whose email
+ * looks like a test user, together with their files in the image bucket (deleting
+ * a user does NOT delete their Storage files). Returns how many users were deleted.
+ */
+export async function sweepTestUsers(): Promise<number> {
+  const storage = serviceClient().storage.from(IMAGE_BUCKET)
+  let deleted = 0
+  for (const user of await allUsers()) {
+    if (user.email && TEST_EMAIL.test(user.email)) {
+      const files = await bucketFilesUnder(user.id)
+      if (files.length > 0) await storage.remove(files)
+      await deleteOwner(user.id)
+      deleted++
     }
-    if (users.length < 200) break
   }
   return deleted
+}
+
+/**
+ * Removes files in the bucket that belong to nobody: top-level folders that are not
+ * an existing user's id (files of owners who were deleted) and the t21-* folders of
+ * the bucket tests. Real owners' files are never touched. Returns how many were removed.
+ */
+export async function removeOrphanBucketFiles(): Promise<number> {
+  const storage = serviceClient().storage.from(IMAGE_BUCKET)
+  const userIds = new Set((await allUsers()).map((u) => u.id))
+  const top = await storage.list('', { limit: 1000 })
+  if (top.error) throw new Error(`storage list failed: ${top.error.message}`)
+  let removed = 0
+  for (const entry of top.data ?? []) {
+    if (userIds.has(entry.name) && !entry.name.startsWith('t21-')) continue
+    const files = entry.id ? [entry.name] : await bucketFilesUnder(entry.name)
+    if (files.length > 0) {
+      await storage.remove(files)
+      removed += files.length
+    }
+  }
+  return removed
+}
+
+/**
+ * The permanent "no leftovers" check (read only): counts test users (addresses
+ * starting slotmate-test-) and files in the image bucket that belong to nobody
+ * or to a test user. Throws, with the COUNTS only, if anything remains.
+ */
+export async function assertNoLeftovers(): Promise<{ testUsers: number; files: number }> {
+  const users = await allUsers()
+  const testUsers = users.filter((u) => u.email && TEST_EMAIL.test(u.email))
+  const userIds = new Set(users.map((u) => u.id))
+  const testIds = new Set(testUsers.map((u) => u.id))
+  const top = await serviceClient().storage.from(IMAGE_BUCKET).list('', { limit: 1000 })
+  if (top.error) throw new Error(`storage list failed: ${top.error.message}`)
+  let files = 0
+  for (const entry of top.data ?? []) {
+    const orphan = !userIds.has(entry.name) || entry.name.startsWith('t21-')
+    if (!orphan && !testIds.has(entry.name)) continue
+    files += entry.id ? 1 : (await bucketFilesUnder(entry.name)).length
+  }
+  if (testUsers.length > 0 || files > 0) {
+    throw new Error(`Leftovers after the run: ${testUsers.length} test user(s), ${files} test file(s) in the image bucket`)
+  }
+  return { testUsers: 0, files: 0 }
 }
 
 // -----------------------------------------------------------------------------

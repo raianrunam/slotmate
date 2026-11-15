@@ -28,8 +28,15 @@ export function ImageSection({
   // One state for both forms, so the message always belongs to the LAST action
   // (upload or remove). Both are Server Actions that check the owner themselves.
   const [state, action, working] = useActionState(
-    (prev: ResourceFormState, formData: FormData) =>
-      formData.get("intent") === "remove" ? removeImage(prev, formData) : uploadResourceImage(prev, formData),
+    async (prev: ResourceFormState, formData: FormData): Promise<ResourceFormState> => {
+      try {
+        return formData.get("intent") === "remove" ? await removeImage(prev, formData) : await uploadResourceImage(prev, formData);
+      } catch {
+        // The request itself failed (for example a file far over the size limit: Next.js
+        // answers before our code runs, or the network dropped). Nothing was stored.
+        return { status: "error", message: "The upload could not be completed. The file may be too large (2 MB at most) or the connection failed. Nothing was saved." };
+      }
+    },
     initialResourceState,
   );
   const [localError, setLocalError] = useState<string | null>(null);

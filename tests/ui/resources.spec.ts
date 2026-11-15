@@ -505,3 +505,97 @@ test("logged-out visitors cannot open the resource pages", async ({ page }) => {
     await expect(page).toHaveURL(/\/login\?next=/);
   }
 });
+
+test.describe("image upload edge cases (Phase 9 review carry-overs)", () => {
+  // Simulates a tampered browser: the form's own size guard sees a small file, but
+  // the request that is really sent carries a big one (FormData is replaced at send time).
+  async function sendBigFileInstead(page: Page, size: number) {
+    await page.evaluate((size) => {
+      const Original = window.FormData;
+      window.FormData = class extends Original {
+        constructor(form?: HTMLFormElement, submitter?: HTMLElement | null) {
+          super(form, submitter);
+          if (form && form.querySelector("input[name=image]")) {
+            const bytes = new Uint8Array(size);
+            bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+            this.set("image", new File([bytes], "big.png", { type: "image/png" }));
+          }
+        }
+      } as typeof FormData;
+    }, size);
+  }
+
+  test("a ~2.15 MB file that skips the browser check reaches the server and gets the friendly 'too large' message", async ({ page }) => {
+    const { owner, ids } = await setup(page);
+    await page.goto(`/dashboard/resources/${ids[0]}`);
+    await page.getByLabel("Upload an image").setInputFiles(png()); // small: the browser guard passes
+    await sendBigFileInstead(page, 2_150_000); // over 2 MB, under the 2200 kB request limit
+    await page.getByRole("button", { name: "Upload image" }).click();
+    await expect(page.getByTestId("image-message")).toContainText("larger than 2 MB");
+    expect((await storedResources(owner.id))[0].image_path).toBeNull();
+    expect(await listOwnerFiles(owner.id), "the bucket is empty").toEqual([]);
+  });
+
+  test("a ~3.5 MB request is stopped before the action: nothing stored and the page shows a friendly message", async ({ page }) => {
+    const { owner, ids } = await setup(page);
+    await page.goto(`/dashboard/resources/${ids[0]}`);
+    await page.getByLabel("Upload an image").setInputFiles(png());
+    await sendBigFileInstead(page, 3_500_000);
+    await page.getByRole("button", { name: "Upload image" }).click();
+    await expect(page.getByTestId("image-message")).toContainText("could not be completed");
+    await expect(page.getByRole("heading", { level: 1, name: "Room 1" }), "no error page").toBeVisible();
+    expect(await listOwnerFiles(owner.id), "nothing stored").toEqual([]);
+    expect((await storedResources(owner.id))[0].image_path).toBeNull();
+    // The page still works after the failure: a normal upload succeeds.
+    await page.reload();
+    await page.getByLabel("Upload an image").setInputFiles(png());
+    await page.getByRole("button", { name: "Upload image" }).click();
+    await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
+  });
+
+  for (const [mime, ext] of [["image/jpeg", "jpg"], ["image/webp", "webp"]] as const) {
+    test(`a real ${ext.toUpperCase()} made by the browser is accepted, stored with the right type and shown`, async ({ page }) => {
+      const { owner, ids } = await setup(page);
+      await page.goto(`/dashboard/resources/${ids[0]}`);
+      const bytes = await page.evaluate(async (type) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 16;
+        canvas.height = 16;
+        const ctx = canvas.getContext("2d")!;
+        ctx.fillStyle = "#3366cc";
+        ctx.fillRect(0, 0, 16, 16);
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type));
+        return Array.from(new Uint8Array(await blob!.arrayBuffer()));
+      }, mime);
+      expect(bytes.length, `the browser made a ${ext}`).toBeGreaterThan(20);
+
+      await page.getByLabel("Upload an image").setInputFiles({ name: `photo.${ext}`, mimeType: mime, buffer: Buffer.from(bytes) });
+      await page.getByRole("button", { name: "Upload image" }).click();
+      await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
+      const [stored] = await storedResources(owner.id);
+      expect(stored.image_path).toMatch(new RegExp(`\.${ext}$`));
+      const url = await page.getByTestId("resource-image").getAttribute("src");
+      const res = await fetch(url!);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain(mime);
+    });
+  }
+
+  test("after an upload the resource folder holds ONLY the recorded file (strays are swept)", async ({ page }) => {
+    const { owner, ids } = await setup(page);
+    // A stray file in the folder (as a concurrent upload or a failed removal would leave).
+    const stray = `${owner.id}/${ids[0]}/${crypto.randomUUID()}.png`;
+    expect((await serviceClient().storage.from("resource-images").upload(stray, PNG_BYTES, { contentType: "image/png" })).error).toBeNull();
+    await page.goto(`/dashboard/resources/${ids[0]}`);
+    await page.getByLabel("Upload an image").setInputFiles(png());
+    await page.getByRole("button", { name: "Upload image" }).click();
+    await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
+    const [stored] = await storedResources(owner.id);
+    await expect.poll(() => listResourceFiles(owner.id, ids[0])).toEqual([stored.image_path]);
+
+    // Removing the image sweeps the folder empty too.
+    await page.getByRole("button", { name: "Remove image" }).click();
+    await expect(page.getByTestId("image-message")).toHaveText("Image removed.");
+    await expect.poll(() => listResourceFiles(owner.id, ids[0])).toEqual([]);
+  });
+});

@@ -9,7 +9,7 @@ import { fieldErrorsFrom, readFields } from "@/features/auth/schema";
 import { withDeadlockRetry } from "@/features/workspaces/db-errors";
 import { FRIENDLY, mapResourceError } from "@/features/resources/db-errors";
 import { checkImageBytes, IMAGE_MESSAGES, MAX_IMAGE_BYTES } from "@/features/resources/image-validation";
-import { removeResourceFiles, removeResourceImage, saveResourceImage } from "@/features/resources/images";
+import { removeResourceFiles, removeResourceImage, saveResourceImage, sweepResourceFilesAfterDelete } from "@/features/resources/images";
 import { getResourceUsage } from "@/features/resources/queries";
 import {
   createResourceSchema,
@@ -150,6 +150,7 @@ export async function deleteResource(_prev: ResourceFormState, formData: FormDat
     return result.error ? failure(mapResourceError(result.error)) : { status: "error", message: FRIENDLY.notAllowed };
   }
 
+  await sweepResourceFilesAfterDelete(owner.id, [resource.id]); // best-effort second sweep
   revalidatePath("/dashboard", "layout");
   redirect("/dashboard/resources?notice=deleted");
 }

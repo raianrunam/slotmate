@@ -7,7 +7,7 @@ import { requireOwner } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { fieldErrorsFrom, readFields } from "@/features/auth/schema";
 import { FRIENDLY, mapWorkspaceError, withDeadlockRetry } from "@/features/workspaces/db-errors";
-import { removeResourceFiles } from "@/features/resources/images";
+import { removeResourceFiles, sweepResourceFilesAfterDelete } from "@/features/resources/images";
 import { getWorkspaceUsage } from "@/features/workspaces/queries";
 import { MESSAGES, workspaceIdSchema, workspaceSchema } from "@/features/workspaces/schema";
 import type { WorkspaceFormState } from "@/features/workspaces/state";
@@ -148,6 +148,7 @@ export async function deleteWorkspace(
     return { status: "error", message: FRIENDLY.notAllowed };
   }
 
+  await sweepResourceFilesAfterDelete(owner.id, (inside.data ?? []).map((r) => r.id)); // best-effort second sweep
   revalidatePath("/dashboard", "layout");
   redirect("/dashboard/workspaces?notice=deleted");
 }

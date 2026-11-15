@@ -18,6 +18,18 @@ export interface DetectedImage {
 }
 
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const IHDR = [0x49, 0x48, 0x44, 0x52]; // "IHDR"
+const WEBP_CHUNKS = [
+  [0x56, 0x50, 0x38, 0x20], // "VP8 "
+  [0x56, 0x50, 0x38, 0x4c], // "VP8L"
+  [0x56, 0x50, 0x38, 0x58], // "VP8X"
+];
+
+// Smallest sizes a real file of each type can have. Anything shorter is a
+// truncated or made-up file, whatever its first bytes say.
+const MIN_JPEG_BYTES = 20;
+const MIN_PNG_BYTES = 33; // 8 signature + 25 for the IHDR chunk
+const MIN_WEBP_BYTES = 20; // 12 RIFF header + 8 chunk header
 
 function startsWith(bytes: Uint8Array, signature: readonly number[], offset = 0) {
   return signature.every((b, i) => bytes[offset + i] === b);
@@ -25,21 +37,33 @@ function startsWith(bytes: Uint8Array, signature: readonly number[], offset = 0)
 
 /** The image type from the file's first bytes, or null when it is not JPG, PNG or WebP. */
 export function detectImageType(bytes: Uint8Array): DetectedImage | null {
-  // JPEG: FF D8 FF
-  if (bytes.length >= 3 && startsWith(bytes, [0xff, 0xd8, 0xff])) {
+  // JPEG: FF D8 FF, then a marker byte (APPn, DQT, SOF..., COM: C0 to FE). The
+  // marker byte rules out most text and binary files that merely start with FF D8 FF.
+  if (bytes.length >= MIN_JPEG_BYTES && startsWith(bytes, [0xff, 0xd8, 0xff]) && bytes[3] >= 0xc0 && bytes[3] <= 0xfe) {
     return { ext: "jpg", contentType: "image/jpeg" };
   }
-  // PNG: 89 50 4E 47 0D 0A 1A 0A
-  if (bytes.length >= 8 && startsWith(bytes, PNG)) {
+  // PNG: the 8-byte signature, then the first chunk must be IHDR (length 13).
+  if (
+    bytes.length >= MIN_PNG_BYTES &&
+    startsWith(bytes, PNG) &&
+    startsWith(bytes, [0x00, 0x00, 0x00, 0x0d], 8) &&
+    startsWith(bytes, IHDR, 12)
+  ) {
     return { ext: "png", contentType: "image/png" };
   }
-  // WebP: "RIFF" + 4 size bytes + "WEBP"
+  // WebP: "RIFF", a size that fits inside the file, "WEBP", then a VP8, VP8L or VP8X chunk.
   if (
-    bytes.length >= 12 &&
+    bytes.length >= MIN_WEBP_BYTES &&
     startsWith(bytes, [0x52, 0x49, 0x46, 0x46]) &&
-    startsWith(bytes, [0x57, 0x45, 0x42, 0x50], 8)
+    startsWith(bytes, [0x57, 0x45, 0x42, 0x50], 8) &&
+    WEBP_CHUNKS.some((chunk) => startsWith(bytes, chunk, 12))
   ) {
-    return { ext: "webp", contentType: "image/webp" };
+    const riffSize = bytes[4] + bytes[5] * 256 + bytes[6] * 65536 + bytes[7] * 16777216;
+    // The declared size counts everything after the 8-byte RIFF header; it may not be
+    // larger than the file (a cut-off file), and must at least hold "WEBP" + a chunk header.
+    if (riffSize >= 12 && riffSize + 8 <= bytes.length) {
+      return { ext: "webp", contentType: "image/webp" };
+    }
   }
   return null;
 }

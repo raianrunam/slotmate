@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
-import { sweepTestUsers } from "../db/helpers";
+import { assertNoLeftovers, removeOrphanBucketFiles, sweepTestUsers } from "../db/helpers";
 import { deleteTestUser, OWNER_INFO, OWNER_STATE } from "./owner";
 
 // Deletes the shared owner, then sweeps any other "slotmate-test-" user a
@@ -12,4 +12,7 @@ export default async function globalTeardown() {
   rmSync(OWNER_INFO, { force: true });
   rmSync(OWNER_STATE, { force: true });
   await sweepTestUsers();
+  await removeOrphanBucketFiles();
+  // Permanent check: fails the run if any test user or test file remains.
+  await assertNoLeftovers();
 }

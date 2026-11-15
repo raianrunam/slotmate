@@ -18,9 +18,12 @@ const nextConfig: NextConfig = {
     ];
   },
   // Resource images are uploaded through a Server Action (S1). The default body
-  // limit is 1 MB; an image may be 2 MB, so allow a little more. The real 2 MB
-  // limit is checked in the action.
-  experimental: { serverActions: { bodySizeLimit: "3mb" }, agentFeedback: false },
+  // limit is 1 MB; an image may be 2 MB (2,097,152 bytes), so the limit is 2200 kB
+  // (2,252,800 bytes): room for the form's own overhead, but no more, because the
+  // limit applies to EVERY Server Action. The real 2 MB limit is checked in the
+  // action; a file over about 2.15 MB is stopped by Next.js before our code runs,
+  // and the form shows a friendly message for that (image-section.tsx).
+  experimental: { serverActions: { bodySizeLimit: "2200kb" }, agentFeedback: false },
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
