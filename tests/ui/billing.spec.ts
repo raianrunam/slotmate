@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { serviceClient } from "../db/helpers";
 import { LOGGED_OUT } from "./owner";
+import { guardStripeVars } from "./stripe-helpers";
 import { addResource, addWorkspace, cleanupOwners, forgeOnSubmit, logIn, newOwner, setPlan, tag } from "./owners";
 
 // Phase 15 UI: the billing page for Free and Pro owners, the upgrade button reaching Stripe Checkout
@@ -11,7 +12,9 @@ test.use({ storageState: LOGGED_OUT });
 test.afterAll(cleanupOwners);
 
 const service = serviceClient();
-const stripeConfigured = Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET && process.env.STRIPE_PRO_PRICE_ID);
+// Fails (not skips) when CI is set and a Stripe variable is missing; skipped on a machine without them.
+const stripeMissing = guardStripeVars(["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRO_PRICE_ID"]);
+const stripeConfigured = stripeMissing.length === 0;
 
 test("a Free owner sees the Free plan, real usage, the upgrade button and no manage button", async ({ page }) => {
   const owner = await newOwner();

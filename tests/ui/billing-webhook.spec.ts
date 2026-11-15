@@ -1,9 +1,17 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
-import { randomBytes } from "node:crypto";
+import { expect, test } from "@playwright/test";
 import Stripe from "stripe";
 import { serviceClient } from "../db/helpers";
 import { LOGGED_OUT } from "./owner";
 import { addResource, addWorkspace, cleanupOwners, logIn, newOwner, tag, type TestOwner } from "./owners";
+import {
+  createPayingCustomer,
+  guardStripeVars,
+  priceId,
+  secretKey,
+  sendEvent as send,
+  stripeEvent as event,
+  subscriptionRow as row,
+} from "./stripe-helpers";
 
 // Phase 15 integration: the REAL webhook of the running app, REAL Stripe test-mode objects (a customer with
 // the test card pm_card_visa and a subscription to the Pro price), messages signed with the real signing
@@ -19,41 +27,11 @@ test.use({ storageState: LOGGED_OUT });
 test.describe.configure({ mode: "serial" });
 test.afterAll(cleanupOwners);
 
-const secretKey = process.env.STRIPE_SECRET_KEY;
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-const priceId = process.env.STRIPE_PRO_PRICE_ID;
-const configured = Boolean(secretKey && webhookSecret && priceId);
-const missingNames = () => [["STRIPE_SECRET_KEY", secretKey], ["STRIPE_WEBHOOK_SECRET", webhookSecret], ["STRIPE_PRO_PRICE_ID", priceId]].filter(([, v]) => !v).map(([n]) => n);
-
+const missing = guardStripeVars(["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "STRIPE_PRO_PRICE_ID"]);
 const service = serviceClient();
-const PATH = "/api/stripe/webhook";
-
-function event(type: string, object: Record<string, unknown>, id = `evt_test_${randomBytes(10).toString("hex")}`) {
-  return { id, payload: JSON.stringify({ id, object: "event", type, created: Math.floor(Date.now() / 1000), data: { object } }) };
-}
-
-async function send(
-  request: APIRequestContext,
-  payload: string,
-  how: "valid" | "none" | "garbage" | "wrong-secret" | "tampered" = "valid",
-) {
-  const stripe = new Stripe(secretKey!);
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  if (how === "valid") headers["stripe-signature"] = stripe.webhooks.generateTestHeaderString({ payload, secret: webhookSecret! });
-  if (how === "wrong-secret") headers["stripe-signature"] = stripe.webhooks.generateTestHeaderString({ payload, secret: "whsec_not_the_real_one" });
-  if (how === "garbage") headers["stripe-signature"] = "t=1,v1=deadbeef";
-  if (how === "tampered") headers["stripe-signature"] = stripe.webhooks.generateTestHeaderString({ payload: payload + " ", secret: webhookSecret! });
-  return await request.post(PATH, { data: payload, headers });
-}
-
-async function row(ownerId: string) {
-  const { data, error } = await service.from("subscriptions").select("*").eq("owner_id", ownerId).single();
-  if (error) throw new Error(`subscription read failed: ${error.code}`);
-  return data;
-}
 
 test.describe("Stripe webhook against the real app and Stripe test mode", () => {
-  test.skip(!configured, `Missing in .env.local: ${missingNames().join(", ")}`);
+  test.skip(missing.length > 0, `Missing in .env.local: ${missing.join(", ")}`);
   test.setTimeout(180_000);
 
   let owner: TestOwner;
@@ -65,10 +43,7 @@ test.describe("Stripe webhook against the real app and Stripe test mode", () => 
   test.beforeAll(async () => {
     stripe = new Stripe(secretKey!);
     owner = await newOwner();
-    const customer = await stripe.customers.create({ description: `slotmate-test ${tag()}`, metadata: { slotmate_test: "1" } });
-    customerId = customer.id;
-    await stripe.paymentMethods.attach("pm_card_visa", { customer: customerId });
-    await stripe.customers.update(customerId, { invoice_settings: { default_payment_method: (await stripe.paymentMethods.list({ customer: customerId, type: "card" })).data[0].id } });
+    customerId = await createPayingCustomer(stripe, tag());
     const subscription = await stripe.subscriptions.create({
       customer: customerId,
       items: [{ price: priceId! }],
