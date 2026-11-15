@@ -42,7 +42,7 @@ The limits are stored in the database and are designed to be enforced there, not
 
 - **Next.js 16** (App Router), **React 19**, **TypeScript**, **Tailwind CSS 4**
 - **Supabase**: PostgreSQL with row level security, Auth, Storage
-- **Stripe** (test mode) for subscriptions: planned (Phase 15)
+- **Stripe** (test mode) for subscriptions (Phase 15)
 - **Recharts** for charts (Phase 13)
 - **shadcn/ui** (Radix UI and Lucide icons) for the interface components
 - **Playwright** for tests
@@ -80,7 +80,7 @@ Read more:
 - **Phase 12** Booking management: built and tested (the booking list with status filter, search and paging, details, approve, reject, cancel and delete, a pending-request badge, and a real dashboard overview).
 - **Phase 13** Dashboard analytics: built and tested (a workspace selector; totals, status distribution and a 30-day chart with days in the workspace's time zone for everyone; monthly chart, resource usage and date-range filters for Pro, decided on the server; every chart has a text table). Built in parallel with Phase 14 (see the development log).
 - **Phase 14** Embed widgets: built and tested (`/dashboard/widget` with theme, Pro-only layout and background colour, a preview and a copyable code; `/embed/<slug>` is the booking flow in an iframe and the only page that may be framed; Pro values are ignored for Free owners).
-- **Phase 15** Stripe billing: planned
+- **Phase 15** Stripe billing (test mode): built. Upgrade through Stripe Checkout, Manage/cancel through the Customer Portal, a signed webhook that asks Stripe for the current subscription before saving it, a real billing page, and the downgrade selection (the owner picks 1 workspace and up to 3 resources; nothing is chosen for them). 355 unit checks, 243 UI checks (10 skipped until `STRIPE_PRO_PRICE_ID` is set) and 92 database tests pass. The end-to-end tests against real Stripe test objects have **not run yet** (see the development log).
 - **Phase 16** Agentic tools and parallel development: in progress (Phases 13 and 14 were built at the same time by two background subagents in two git worktrees; evidence in the development log)
 - **Phase 17** Complete testing and bug fixing: planned
 - **Phase 18** README, screenshots and submission reflection: planned
@@ -111,7 +111,7 @@ These steps set up your own copy against your own Supabase project. Do them **in
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`: Project Settings > API Keys. The secret key bypasses all security rules: keep it server-side only.
    - `NEXT_PUBLIC_APP_URL`: `http://localhost:3000` while developing.
    - `RATE_LIMIT_SECRET`: any long random string, for example from `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
-   - `.env.example` now contains the four variables above. `RATE_LIMIT_SECRET` is not in the template yet: add it to your `.env.local` when a phase needs it. The `STRIPE_*` variables are only needed from Phase 15.
+   - `.env.example` now contains the four variables above. `RATE_LIMIT_SECRET` is not in the template yet: add it to your `.env.local` when a phase needs it. `.env.example` also lists `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `STRIPE_PRO_PRICE_ID` (names only, test mode). For the webhook on your own computer run `stripe listen --forward-to localhost:3000/api/stripe/webhook`; it prints the signing secret for `STRIPE_WEBHOOK_SECRET`.
 
    The full list of names and what each is for: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 7.
 
