@@ -60,13 +60,16 @@ test("the secret-key variable name appears only in src/lib/supabase/admin.ts (A4
 
 // Phase 11: A4 places 1 to 3 (public reads, booking submission, rate limit) live in two
 // server-only modules of the public-booking feature. Nothing else may import the admin module.
+// Phase 15 adds A4 places 4 and 6: the Stripe webhook and the downgrade selection.
 const ADMIN_IMPORTERS = [
+  "src/features/billing/downgrade-actions.ts",
+  "src/features/billing/webhook.ts",
   "src/features/public-booking/actions.ts",
   "src/features/public-booking/queries.ts",
   "src/features/resources/images.ts",
 ];
 
-test("the admin module is server-only and only the three listed server-only modules import it", () => {
+test("the admin module is server-only and only the listed server-only modules import it", () => {
   expect(read(path.join(SRC, "lib/supabase/admin.ts"))).toMatch(/^import "server-only"/m);
   const importers = files
     .filter((f) => rel(f) !== "src/lib/supabase/admin.ts")
@@ -94,9 +97,25 @@ test("Server Actions file is a 'use server' file", () => {
   expect(read(path.join(SRC, "features/auth/actions.ts")).trimStart().startsWith('"use server"')).toBe(true);
 });
 
-test("the only Route Handler is /auth/confirm (A2)", () => {
+test("the only Route Handlers are /api/stripe/webhook and /auth/confirm (A2)", () => {
   const handlers = files.filter((f) => /[\\/]route\.ts$/.test(f)).map(rel);
-  expect(handlers).toEqual(["src/app/auth/confirm/route.ts"]);
+  expect(handlers).toEqual(["src/app/api/stripe/webhook/route.ts", "src/app/auth/confirm/route.ts"]);
+});
+
+// Phase 15: the three Stripe variable names are read in exactly one module, and the Stripe
+// library is never imported by a "use client" file.
+test("the Stripe variable names appear only in src/lib/stripe/client.ts", () => {
+  const offenders = files.filter((f) => /STRIPE_(SECRET_KEY|WEBHOOK_SECRET|PRO_PRICE_ID)/.test(read(f))).map(rel);
+  expect(offenders).toEqual(["src/lib/stripe/client.ts"]);
+  expect(read(path.join(SRC, "lib/stripe/client.ts"))).toMatch(/^import "server-only"/m);
+});
+
+test('no "use client" file imports stripe or the billing server modules', () => {
+  const bad = files
+    .filter((f) => /^\s*["']use client["']/.test(read(f)))
+    .filter((f) => /from\s+["'](stripe|@\/lib\/stripe\/client|@\/features\/billing\/(webhook|queries))["']/.test(read(f)))
+    .map(rel);
+  expect(bad).toEqual([]);
 });
 
 test("passwords and emails are never written to a log", () => {

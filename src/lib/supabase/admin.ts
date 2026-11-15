@@ -4,6 +4,8 @@ import type { Database } from "@/types/database.types";
 
 // THE admin connection (the secret key, role service_role). It skips RLS, so it
 // is used in as few places as possible (ARCHITECTURE A4). Its importers are exactly:
+//  * src/features/billing/webhook.ts (the Stripe webhook, "place 4");
+//  * src/features/billing/downgrade-actions.ts (the downgrade selection, "place 6");
 //  * src/features/resources/images.ts (resource image Storage, S1, "place 5", and the
 //    clean-up before deletes, DB15);
 //  * src/features/public-booking/queries.ts (public reads, "place 1");
