@@ -114,3 +114,23 @@ test("the confirm route has no 'next' or free-form redirect", () => {
   expect(route).not.toMatch(/get\(["']next["']\)/);
   expect(route).not.toMatch(/searchParams\.get\(["'](redirect|redirect_to|url|to)["']\)/);
 });
+
+
+// Phase 11 review finding 13: the public reads only READ, and the public action file calls only the two
+// approved database functions (ARCHITECTURE A4 places 1 to 3).
+test("public-booking queries only read; the action file calls only check_rate_limit and submit_booking", () => {
+  const queries = read(path.join(process.cwd(), "src/features/public-booking/queries.ts"));
+  expect(queries).not.toMatch(/\.from\("[a-z_]+"\)\s*\.(insert|update|upsert|delete)\(/);
+  expect([...queries.matchAll(/\.rpc\(\s*"(\w+)"/g)].map((m) => m[1])).toEqual(["current_plan"]);
+  const actions = read(path.join(process.cwd(), "src/features/public-booking/actions.ts"));
+  expect(actions).not.toMatch(/\.from\("[a-z_]+"\)\s*\.(insert|update|upsert|delete)\(/);
+  expect([...actions.matchAll(/\.rpc\(\s*"(\w+)"/g)].map((m) => m[1]).sort()).toEqual(["check_rate_limit", "submit_booking"]);
+});
+
+test("nothing in src/lib/supabase imports the admin module by a relative path (the allow-list regex would miss it)", () => {
+  const siblings = files
+    .filter((f) => /src[\/]lib[\/]supabase[\/]/.test(f) && rel(f) !== "src/lib/supabase/admin.ts")
+    .filter((f) => /from\s+["']\.\/admin["']/.test(read(f)))
+    .map(rel);
+  expect(siblings).toEqual([]);
+});

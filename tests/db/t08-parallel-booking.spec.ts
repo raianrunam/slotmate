@@ -20,7 +20,7 @@ import {
 // owner's monthly count rose by exactly 1 per round. (PERF-03, AVAIL-04)
 
 const ROUNDS = 20
-const CALLS_PER_ROUND = 3
+const CALLS_PER_ROUND = 10
 
 test.describe('T8 parallel booking of one slot', () => {
   test.setTimeout(240_000)
