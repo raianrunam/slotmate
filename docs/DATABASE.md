@@ -666,7 +666,7 @@ The rules, in terms of what the function does:
 - **Per visitor per workspace:** the count filters on both columns, so attempts at workspace X never reduce the allowance for workspace Y (A9c).
 - **Never counts against the owner's monthly limit:** this function runs before `submit_booking` and touches `monthly_usage` not at all (SEC-06).
 - **Clean-up is built in:** step 1 above; no scheduled job (A9d).
-- **Two simultaneous attempts** may each see the other's record and both be refused at exactly the boundary. That errs on the safe side and is accepted.
+- **Two simultaneous attempts: CORRECTED in Phase 11 (this was wrong).** The function runs in READ COMMITTED, so simultaneous calls cannot see each other's uncommitted record: each counts only committed rows plus its own, and a burst of N parallel requests can be **allowed in full** (a test run allowed 9 of 10; another run allowed no more than 5, it depends on timing). Once the burst has committed, the visitor is refused for 10 minutes as designed. The monthly limit and the overlap rule still bound the damage; double booking is not possible. **Open decision for the owner (needs a new migration):** take an advisory lock at the start of the function, for example `perform pg_advisory_xact_lock(hashtextextended(p_workspace_id::text || encode(p_ip_hash, 'hex'), 0));`, so each call sees the previous call's committed row. Test T14 has this case written and skipped until then.
 - **Access:** table closed to all browser roles; function callable by `service_role` only (section 6).
 
 ### 7.5 The status token hash (A8, NOTIF-03)
