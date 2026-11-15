@@ -1,112 +1,113 @@
 import type { Metadata } from "next";
-import { CopyIcon } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
+import { LayoutTemplateIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmptyState } from "@/components/empty-state";
 import { OwnerGate } from "@/components/owner-gate";
 import { PageHeader } from "@/components/page-header";
-import { PlaceholderNotice } from "@/components/placeholder-notice";
+import { EmbedCode } from "@/features/embed/components/embed-code";
+import { WidgetForm } from "@/features/embed/components/widget-form";
+import { getWidgetOptions, listWidgetWorkspaces } from "@/features/embed/queries";
+import { embedPath, workspaceIdSchema } from "@/features/embed/schema";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Widget" };
 
-// The code the owner will copy (EMBED-01/02/07). A sample address, not a real one.
-const EMBED_CODE = `<iframe
-  src="https://example.com/embed/sample-workspace"
-  title="Book with SlotMate"
-  width="100%"
-  height="640"
-  style="border:0"
-></iframe>`;
+type SearchParams = Promise<{ workspace?: string | string[] }>;
 
-function WidgetContent() {
+async function WidgetContent({ searchParams }: { searchParams: SearchParams }) {
+  const { workspace: requested } = await searchParams;
+  const workspaces = await listWidgetWorkspaces();
+
+  if (workspaces.length === 0) {
+    return (
+      <>
+        <PageHeader title="Widget" description="Show your booking page on another website with a snippet you paste in." />
+        <EmptyState
+          icon={LayoutTemplateIcon}
+          title="No workspace yet"
+          description="Create a workspace first. Its booking page can then be shown on another website."
+          action={
+            <Button asChild className="h-10">
+              <Link href="/dashboard/workspaces/new">New workspace</Link>
+            </Button>
+          }
+        />
+      </>
+    );
+  }
+
+  // Only the owner's own workspaces can be chosen (the list came from their own session).
+  // An unknown, foreign or malformed ?workspace= falls back to the first one.
+  const wanted = typeof requested === "string" && workspaceIdSchema.safeParse(requested).success ? requested : null;
+  const current = workspaces.find((w) => w.id === wanted) ?? workspaces[0];
+  const { options, plan } = await getWidgetOptions(current.id);
+  const previewKey = `${current.id}-${options.theme}-${options.layout}-${options.backgroundColor ?? "none"}`;
+
   return (
     <>
-      <PageHeader
-        title="Widget"
-        description="Show your booking page on another website with a snippet you paste in."
-      />
-      <PlaceholderNotice phase="Phase 14" />
+      <PageHeader title="Widget" description="Show your booking page on another website with a snippet you paste in." />
+
+      {workspaces.length > 1 ? (
+        <nav aria-label="Choose a workspace" className="flex flex-wrap gap-2">
+          {workspaces.map((w) => (
+            <Button
+              key={w.id}
+              asChild
+              variant={w.id === current.id ? "default" : "outline"}
+              className="h-10 sm:h-8"
+            >
+              <Link href={`/dashboard/widget?workspace=${w.id}`} aria-current={w.id === current.id ? "page" : undefined}>
+                {w.name}
+              </Link>
+            </Button>
+          ))}
+        </nav>
+      ) : null}
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Appearance</CardTitle>
-            <CardDescription>Choose how the widget looks.</CardDescription>
+            <CardDescription>
+              Choose how the widget for <strong className="[overflow-wrap:anywhere]">{current.name}</strong> looks.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4">
-            <div className="grid gap-1.5">
-              <Label htmlFor="widget-theme">Theme</Label>
-              <Select defaultValue="light" disabled>
-                <SelectTrigger id="widget-theme" className="h-10 w-full sm:h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="light">Light</SelectItem>
-                  <SelectItem value="dark">Dark</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="widget-layout" className="flex items-center gap-2">
-                Layout <Badge variant="secondary">Pro</Badge>
-              </Label>
-              <Select defaultValue="list" disabled>
-                <SelectTrigger id="widget-layout" className="h-10 w-full sm:h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="list">List</SelectItem>
-                  <SelectItem value="grid">Grid</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="widget-background" className="flex items-center gap-2">
-                Background colour <Badge variant="secondary">Pro</Badge>
-              </Label>
-              <Input id="widget-background" placeholder="#ffffff" disabled className="h-10 text-base md:text-sm" />
-            </div>
+          <CardContent>
+            {/* key: the form starts again from the saved values when another workspace is chosen */}
+            <WidgetForm key={current.id} workspaceId={current.id} saved={options} isPro={plan === "pro"} locked={current.isLocked} />
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>Live preview</CardTitle>
-            <CardDescription>This is how visitors will see it (sketch).</CardDescription>
+            <CardDescription>
+              This is the widget as visitors see it with your <em>saved</em> options. Save to update it.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div
-              aria-hidden="true"
-              className="grid gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-4"
-            >
-              <span className="h-4 w-1/2 rounded bg-foreground/20" />
-              <span className="h-10 rounded-lg border border-border bg-card" />
-              <span className="h-10 rounded-lg border border-border bg-card" />
-              <span className="h-9 w-1/3 rounded-lg bg-primary/70" />
-            </div>
+            <iframe
+              key={previewKey}
+              src={embedPath(current.slug)}
+              title="Widget preview"
+              data-testid="widget-preview"
+              className={cn("h-[640px] w-full rounded-lg border border-border bg-background")}
+            />
           </CardContent>
         </Card>
       </div>
+
       <Card>
         <CardHeader>
           <CardTitle>Embed code</CardTitle>
-          <CardDescription>Copy this into the page where the widget should appear.</CardDescription>
+          <CardDescription>
+            Copy this into the page where the widget should appear. It only holds the public address of your widget and its
+            size, so changing the options here needs no new code.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3">
-          <pre
-            tabIndex={0}
-            role="region"
-            aria-label="Embed code"
-            className="overflow-x-auto rounded-lg border border-border bg-muted p-4 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <code>{EMBED_CODE}</code>
-          </pre>
-          <div>
-            <Button variant="outline" className="h-10 sm:h-8" disabled>
-              <CopyIcon aria-hidden="true" /> Copy code
-            </Button>
-          </div>
+        <CardContent>
+          <EmbedCode slug={current.slug} />
         </CardContent>
       </Card>
     </>
@@ -114,10 +115,10 @@ function WidgetContent() {
 }
 
 // Every dashboard page checks the owner first (A3 layer 2). A unit test enforces this.
-export default function WidgetPage() {
+export default function WidgetPage({ searchParams }: { searchParams: SearchParams }) {
   return (
     <OwnerGate>
-      <WidgetContent />
+      <WidgetContent searchParams={searchParams} />
     </OwnerGate>
   );
 }
