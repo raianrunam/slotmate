@@ -81,7 +81,7 @@ Security requirements:
 
 Current project boundary:
 
-- Migrations 1–7 are applied to the development Supabase project. The design is in `docs/DATABASE.md` (section 9 lists the migrations); the tests are in `docs/TESTING.md`.
+- Migrations 1–8 are applied to the development Supabase project. The design is in `docs/DATABASE.md` (section 9 lists the migrations); the tests are in `docs/TESTING.md`.
 - Never edit a migration that has already been pushed. Any change is a NEW migration, and a new migration needs the project owner's explicit authorization.
 - Do not create or apply migrations, run `supabase db push`, or change Supabase data or settings unless the project owner explicitly authorizes that specific task. Read-only checks (`supabase db query --remote --read-only`) are allowed when a task asks for them.
 - `npm run test:db` is authorized as a verification step. It creates and deletes only throw-away test users (addresses like `slotmate-test-<random>@example.com`, and everything they own) in the linked development project, and must leave nothing behind. Any other write to Supabase still needs the owner's explicit authorization for that task.

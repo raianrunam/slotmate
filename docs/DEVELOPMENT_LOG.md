@@ -159,6 +159,17 @@ Migrations 3–7 were written as files in one batch, then reviewed by **separate
 - **Found while testing:** the full UI suite now hits Supabase's sign-in rate limit (about 190 sign-ins), so the availability tests share one Pro owner per worker.
 - **Checks (2026-11-15):** `npx tsc --noEmit`, `npx eslint` and `npm run build` clean; 209 unit, 189 UI and 53 database tests pass; both teardowns confirmed that no test user and no test file remained.
 
+## Phase 11 — Public booking (2026-11-15)
+
+- **Built:** the public page `/book/[slug]`, the status page `/booking/[code]`, the submit action (rate limit first, then `submit_booking`), privacy rules for what a visitor can see. Commits `e4f963e`, then review fixes `de08f48`, tests `be24d00`, docs `47a15cb`.
+- **IPv6 rate-limit bypass (found by review):** the limit was keyed on the exact address, but one home line or server owns a whole IPv6 block (a /64) and can send every request from a different address inside it. Fixed in the app: the key for IPv6 is the first 64 bits, and an IPv4-mapped address equals the plain IPv4 one.
+- **Owner id leaked through the image address (found by review, finding 2):** image paths were `<owner_id>/<resource_id>/<file>` in a public bucket, so a public page showed the owner's id. The privacy test missed it because the test resource had no image. The fix needs a database change (migration 8) and a new path layout `<resource_id>/<file>`; the public-page privacy test must include an image and assert the owner id is absent.
+- **Parallel burst bypass (found by testing):** `check_rate_limit` counts only committed rows, so simultaneous calls could all be allowed (9 of 10 in one run). The T14 burst test is skipped until migration 8 adds an advisory lock. `DATABASE.md` 7.4 was corrected.
+- **Accepted trade-off:** the rate limit counts honest retries too (every attempt counts, including refused ones, A9b). D24 stays at 5 per 10 minutes.
+- **Checks (2026-11-15, before migration 8):** build clean; 238 unit, 193 UI and 65 database tests pass (1 skipped: the T14 burst).
+- **Migration 8 (2026-11-15, `rate_limit_lock_and_image_path`; written after owner authorization, reviewed by an independent read-only subagent, dry run, pushed, read-only check saved in `m8-results.txt`):** `check_rate_limit` takes a per-visitor advisory lock first and deletes old rows in bounded batches (`skip locked`, review finding L1, no deadlock); `set_resource_image` accepts only `<resource_id>/<one plain file name>` (allow-list, review finding L2), so the owner id is out of public image addresses. Decision R4 changed with the owner's confirmation. App, tests and docs moved to the new layout; the T14 burst test is on (20 parallel, exactly 5 allowed); the privacy test now has an image and asserts the owner id is absent. A one-time check of the dev project found no old-layout image (0 resources and 0 files to clean).
+- **Checks (2026-11-15, after migration 8):** build clean; 238 unit, 193 UI and 66 database tests pass (none skipped); both teardowns confirmed no test user and no test file remained.
+
 ## Agent mistakes and how they were caught
 
 Honest record of things the agents got wrong. Mistakes 1–9 happened in Phases 1–4a; 10–13 and 16 in Phase 4e (the migration reviews); 15 in Phase 4d; 14 and 17 in Phase 5.
@@ -273,3 +284,4 @@ Authentication (Phase 7):
 - **2026-11-15** — Added the Phase 9 entry.
 - **2026-11-15** — Added the Phase 8 entry.
 - **2026-11-15** — Added the Phase 7 entry, mistakes 22–28, and the authentication open items.
+- **2026-11-15** — Added the Phase 11 entry.
