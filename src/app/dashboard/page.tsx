@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { getWorkspaceUsage } from "@/features/workspaces/queries";
+import { getResourceUsage } from "@/features/resources/queries";
 import { whenLabel } from "@/features/bookings/format";
 import { getOverviewStats, getPendingRequests, getRecentActivity, type BookingListRow } from "@/features/bookings/queries";
 import { PLANS } from "@/lib/plans";
@@ -30,6 +31,29 @@ async function WorkspacesStatCard() {
         </span>
         <Link href="/dashboard/workspaces" className="font-medium text-foreground underline underline-offset-4">
           Manage workspaces
+        </Link>
+      </CardContent>
+    </Card>
+  );
+}
+
+// DASH-02: all resources across all workspaces (locked ones included, like the plan limit).
+async function ResourcesStatCard() {
+  const usage = await getResourceUsage();
+  return (
+    <Card>
+      <CardHeader className="gap-1">
+        <CardDescription>Resources</CardDescription>
+        <CardTitle className="text-3xl font-semibold" data-testid="overview-resources-count">
+          {usage.used}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-1 text-sm text-muted-foreground">
+        <span>
+          of {usage.max} on the {PLANS[usage.plan].name} plan
+        </span>
+        <Link href="/dashboard/resources" className="font-medium text-foreground underline underline-offset-4">
+          Manage resources
         </Link>
       </CardContent>
     </Card>
@@ -197,6 +221,7 @@ function DashboardOverviewContent() {
       <PageHeader title="Overview" description="A summary of your workspaces and booking requests." />
       <section aria-label="Summary" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <WorkspacesStatCard />
+        <ResourcesStatCard />
         <BookingStatCards />
       </section>
       <ActivitySections />

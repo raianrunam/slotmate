@@ -14,6 +14,7 @@ import { DeleteWorkspaceButton } from "@/features/workspaces/components/delete-w
 import { WorkspaceLimitNotice } from "@/features/workspaces/components/limit-notice";
 import { getWorkspaceUsage, listWorkspaces } from "@/features/workspaces/queries";
 import { publicPath } from "@/features/workspaces/schema";
+import { CopyAddress } from "@/features/workspaces/components/copy-address";
 
 export const metadata: Metadata = { title: "Workspaces" };
 
@@ -98,6 +99,9 @@ async function WorkspacesContent({ searchParams }: { searchParams: SearchParams 
                     <CardDescription>
                       <span className="font-mono">{publicPath(workspace.slug)}</span> ·{" "}
                       {workspace.time_zone} time
+                      <span className="mt-2 block">
+                        <CopyAddress path={publicPath(workspace.slug)} name={workspace.name} />
+                      </span>
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="flex flex-wrap items-start justify-between gap-3">

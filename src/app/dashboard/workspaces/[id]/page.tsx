@@ -12,6 +12,7 @@ import { WorkspaceForm } from "@/features/workspaces/components/workspace-form";
 import { WorkspaceResources } from "@/features/resources/components/workspace-resources";
 import { getWorkspace } from "@/features/workspaces/queries";
 import { listTimeZones, publicPath, workspaceIdSchema } from "@/features/workspaces/schema";
+import { CopyAddress } from "@/features/workspaces/components/copy-address";
 
 export const metadata: Metadata = { title: "Workspace" };
 
@@ -49,7 +50,10 @@ async function WorkspaceContent({ params }: { params: Promise<{ id: string }> })
           <dl className="grid gap-3 text-sm">
             <div>
               <dt className="text-muted-foreground">Public address</dt>
-              <dd className="font-mono">{publicPath(workspace.slug)}</dd>
+              <dd className="flex flex-wrap items-center gap-2">
+                <span className="font-mono">{publicPath(workspace.slug)}</span>
+                <CopyAddress path={publicPath(workspace.slug)} name={workspace.name} />
+              </dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Time zone</dt>
