@@ -10,6 +10,9 @@ import {
   type TestUser,
 } from "./owner";
 
+// The address of the app under test (the port can be changed with UI_TEST_PORT, see playwright.ui.config.ts).
+const BASE = `http://localhost:${process.env.UI_TEST_PORT ?? 3100}`;
+
 // Authentication checks (Phase 7). Nobody is logged in at the start of each test.
 // No real email is ever sent (A20): owners are made with auth.admin.createUser,
 // and email links are made with auth.admin.generateLink, which only returns the
@@ -57,7 +60,7 @@ test.describe("protected dashboard", () => {
 
   test("a made-up login cookie does not open the dashboard", async ({ page, context }) => {
     await context.addCookies([
-      { name: "sb-fake-auth-token", value: "garbage", url: "http://localhost:3100" },
+      { name: "sb-fake-auth-token", value: "garbage", url: BASE },
     ]);
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/\/login/);
@@ -191,7 +194,7 @@ test.describe("open redirects", () => {
       const user = await newUser();
       await page.goto(`/login?next=${encodeURIComponent(next)}`);
       await logIn(page, user);
-      await expect(page).toHaveURL(/localhost:3100\/dashboard$/);
+      await expect(page).toHaveURL(`${BASE}/dashboard`);
     });
   }
 });
@@ -267,7 +270,7 @@ test.describe("/auth/confirm (email-link landing)", () => {
 
   test("the link cannot choose where to go (no open redirect)", async ({ page }) => {
     await page.goto("/auth/confirm?next=https://evil.com&redirect_to=https://evil.com&token_hash=x&type=email");
-    await expect(page).toHaveURL(/localhost:3100\/login\?error=link$/);
+    await expect(page).toHaveURL(`${BASE}/login?error=link`);
   });
 
   test("a recovery link opens the reset form; the new password works, the old one does not; the link cannot be reused", async ({ page }) => {
@@ -361,8 +364,8 @@ test.describe("password reset hardening (review findings 2 and 3)", () => {
 
   test("resetting the password ends the account's other sessions", async ({ browser }) => {
     const user = await newUser();
-    const other = await browser.newContext({ baseURL: "http://localhost:3100" });
-    const resetter = await browser.newContext({ baseURL: "http://localhost:3100" });
+    const other = await browser.newContext({ baseURL: BASE });
+    const resetter = await browser.newContext({ baseURL: BASE });
     try {
       const otherPage = await other.newPage();
       await otherPage.goto("/login");

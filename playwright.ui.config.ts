@@ -12,7 +12,8 @@ import path from "node:path";
 // (playwright.config.ts).
 process.loadEnvFile(".env.local");
 
-const PORT = 3100;
+// The port is configurable so two checkouts (git worktrees) can run the UI suite at the same time.
+const PORT = Number(process.env.UI_TEST_PORT ?? 3100);
 const BASE_URL = `http://localhost:${PORT}`;
 
 export default defineConfig({
