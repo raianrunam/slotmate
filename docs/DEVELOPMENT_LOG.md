@@ -180,6 +180,20 @@ Migrations 3–7 were written as files in one batch, then reviewed by **separate
 - **Tests removed:** two old placeholder tests of the sample booking list in `interactions.spec.ts` (the real list is tested on real data).
 - **Checks (2026-11-15):** `npx tsc --noEmit`, `npx eslint` and `npm run build` clean; 256 unit, 26 + the existing UI tests and 89 database tests pass (full numbers in `TESTING.md`).
 
+## Phase 13 — Dashboard analytics (2026-11-15)
+
+- **Built by background subagent A** in `..\slotmate-analytics` (branch `feat/phase13-analytics`, commits `fe9f530`, `4c90870`, `623000d`): a workspace selector; totals, status distribution and a 30-day chart (days in the workspace's zone, zero filled) for everyone; a monthly chart, resource usage and from/to filters for Pro, decided on the server by one function (`analyticsAccess`, built on `effectivePlan`); a text table for every chart. Details in `src/features/analytics/README.md`. `recharts` was installed (the only package added).
+- **Independent review** (`phase13-review.txt`): 0 critical, 0 high, 5 medium, 12 low. All five medium fixed: (1) the paging loop stopped when a page held fewer than 1,000 rows, which silently undercounts if the host returns fewer rows per request; it now reads an exact count first and advances by the rows actually received (`collectPages`, unit tested with page sizes 1000, 500 and 7); (2) UI assertions that could not fail (a date containing a "0" satisfied "contains 0") now check the exact count cell; (3) paging and the query bounds had no tests, now tested (no gap and no overlap between neighbouring days in six zones, a booking at the end instant belongs to the next day); (4) the monthly chart's first and last month can be partial, the page now says so; (5) the Pro gate was only tested through string guards: the UI tests (a Free owner with `from`/`to`, an owner whose subscription ended) now run and cover it.
+- **Not fixed (low):** offset paging can rarely repeat or skip a row if a booking is added or deleted between pages; `truncated` is effectively unreachable under Pro limits; `parseRange` runs twice with different clocks; a future `from` gets the "end before start" message; no half-hour-zone or skipped-midnight unit case for the `endInstantForWall` fallback; the loading skeleton has no role; long resource names clip on the chart axis; status shares can sum to 99%; the data load is serial (D21 is 3 seconds; not formally timed).
+- **Checked after the merge:** the embedded filter `resources!inner` with `.eq("resources.workspace_id", id)` restricts to the workspace (the UI tests with two workspaces and the selector pass).
+
+## Phase 14 — Embed widget (2026-11-15)
+
+- **Built by background subagent B** in `..\slotmate-widget` (branch `feat/phase14-widget`, commits `7e672ee`, `9bb7c64`, `de0645d`, `6360aa6`): `/dashboard/widget` (workspace choice, theme, Pro-only layout and colour, preview, copy code), `/embed/<slug>` (the booking flow with minimal chrome), header rules in `src/lib/security-headers.ts`. Details in `src/features/embed/README.md`. Small changes outside its suggested files, all needed: `submitBooking` returns the status path when the form says `embed=1` (a redirect would land on the never-frameable status page), `BookingFlow` got an optional `embed` prop, and one header guard in `tests/unit/public-booking.spec.ts` now reads the moved rules.
+- **Independent review** (`phase14-review.txt`): 0 critical, 1 high, 6 medium, 11 low. Fixed: **(high)** a custom colour was set on the outer wrapper only, so the form's own cards kept the theme's colours and the text could become unreadable (navy on the light theme); the colour is now a set of CSS variables the whole form reads, and a UI test measures the contrast of every text (4.5:1 or more on navy, cream and orange; it also found that the accent word "Selected" still used the theme's indigo, now fixed). **(medium)** the text colour threshold was wrong (white text on `#4caf50` and `#ff9800` below 4.5:1); the choice is now the better contrast of black or white (at least 4.5:1, tested on twelve mid-tones). The theme is applied before the first paint by a tiny static script (a light widget on a dark system no longer flashes dark; only the loading skeleton still follows the system theme). The header rules overlapped on bare `/embed` and left `/booking/a/b` without any rule; each path now matches exactly one rule, checked with Next.js's own matcher and on a real server (fourteen strict paths, a POST, bare `/embed`). The embed code uses `NEXT_PUBLIC_APP_URL`.
+- **Not fixed, with the reason (medium 5):** the dashboard preview shows the **saved** options, not unsaved form state. A preview of unsaved values would need a public way to pass options to `/embed`, which would open a way around the Pro gate, so it was kept and flagged in ARCHITECTURE for the owner to confirm.
+- **Not fixed (low):** `frame-ancestors *` does not cover `file:`, `data:` and sandboxed ancestors (browser behaviour); the "Copied" label never resets; the disabled Pro controls are not linked to the upgrade note with `aria-describedby`; the theme radios reset after an error; the success panel has no copyable status link or "book again" button; `getPublicWorkspace` makes five sequential reads; `public-booking` and `embed` import each other; the generic iframe title. An encoded `/%62ooking/<code>` is covered by the strict general rule (tested).
+
 ## Parallel development (Phases 13 and 14)
 
 Phases 13 (analytics) and 14 (embed widget) touch different files, so they were built at the same time. The plan, as it was run:
@@ -190,6 +204,15 @@ Phases 13 (analytics) and 14 (embed widget) touch different files, so they were 
 - **Fences.** Analytics must not touch embed, widget or public-booking files; the widget must not touch `package.json` or analytics files (recharts is installed by analytics only). Neither edits `README.md`, `docs/TESTING.md`, `docs/DEVELOPMENT_LOG.md`, `docs/ARCHITECTURE.md` or the dashboard navigation, sidebar or header; they leave notes in `slotmate-notes\phase13-notes.txt` and `phase14-notes.txt`.
 - **Configurable UI test port.** `UI_TEST_PORT` (default 3100) in `playwright.ui.config.ts` lets two checkouts run the UI suite side by side.
 - **After both finish:** merge into `main`, full checks in the main folder, two fresh reviewers (one per phase), then the docs from the notes files. Evidence is recorded below.
+
+### Parallel development evidence
+
+- **Branches and worktrees:** `feat/phase13-analytics` in `C:\Users\User\projects\slotmate-analytics` (subagent A) and `feat/phase14-widget` in `C:\Users\User\projects\slotmate-widget` (subagent B), both created from `main` at `37826fb`, each with its own `npm install`. Both were launched from this one session, one right after the other, as background subagents.
+- **Times (UTC+06:00, 2026-11-15):** launched 15:14:35; A started 15:14:36 and finished about 15:21:35 (419 s of work, 33 tool calls); B started 15:14:36 and finished 15:24:10 (605 s, 80 tool calls). The two ran **at the same time for about seven minutes** (15:14:36 to about 15:21:35), and B kept working for another two and a half minutes after A was done.
+- **Fences:** A edited only analytics files and `package.json`/`package-lock.json` (recharts); B edited only widget and embed files, `next.config.ts`, and three small, listed spots in `public-booking` plus one header guard in a unit test. Neither edited the documents or the dashboard navigation. Each committed only on its own branch.
+- **Merge conflicts:** none. `git merge --no-ff` of A (`baae8aa`) and then B (`9c53394`) went through without a conflict, because the two sets of files were disjoint (only A touched `package.json`; only B touched `public-booking`, `next.config.ts` and the embed routes). `tests/unit/architecture.spec.ts` needed no change because B added no admin importer.
+- **What the parallel run did not catch (found by the full tests after the merge, in the main folder, where `.env.local` exists):** the subagents ran only tsc, eslint and unit tests, so every browser and database problem appeared at the merge: (1) the UI test cleanup deleted other files' shared owners (several test files share a worker), which only showed once two more such files existed; (2) Chromium's local-network check blocked a host page answered through `page.route` from framing localhost; (3) the forged Pro-only save wrote into disabled form fields, which browsers never send; (4) a server-key read of visitor columns (Q3); (5) a label selector matching two elements; (6) a clipboard whitespace difference; (7) the old page-shell test of `/embed/sample-workspace` logged a recoverable React message once the page became real. None was a defect in the merge itself. Both worktrees showed three failing source-guard unit tests because `core.autocrlf` checks files out with CRLF line endings there; they pass in the main folder.
+- **Lessons:** the fence made the merge trivial; a shared test helper with module-level state is a hidden coupling between "independent" test files; and a subagent without secrets can build and unit test a feature but cannot prove it, so "build in parallel, prove together" needs the proof step to be budgeted.
 
 ## Agent mistakes and how they were caught
 
@@ -238,6 +261,12 @@ Honest record of things the agents got wrong. Mistakes 1–9 happened in Phases 
 - **Saved evidence.** Raw outputs of checks and reviews are kept in a notes folder, not summarized from memory.
 
 ## Open items
+
+Analytics and widget (Phases 13 and 14):
+
+- **Owner decision needed:** the widget preview shows the SAVED options, not unsaved form state (see the Phase 14 entry). Say if a true live preview is wanted; it needs a safe design that cannot bypass the Pro gate.
+- **Not tested by a person:** the manual list in the Phase 13/14 hand-over (charts in light and dark at 375 px, the embed code pasted into a real third-party page, a light widget while the system is dark).
+- Low findings of both reviews are listed in the Phase 13 and Phase 14 entries.
 
 Booking management (Phase 12):
 
@@ -313,3 +342,4 @@ Authentication (Phase 7):
 - **2026-11-15** — Added the Phase 7 entry, mistakes 22–28, and the authentication open items.
 - **2026-11-15** — Added the Phase 11 entry.
 - **2026-11-15** — Added the Phase 12 entry.
+- **2026-11-15** — Added the Phase 13 and Phase 14 entries and the parallel development evidence.

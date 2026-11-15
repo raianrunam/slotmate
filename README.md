@@ -43,7 +43,7 @@ The limits are stored in the database and are designed to be enforced there, not
 - **Next.js 16** (App Router), **React 19**, **TypeScript**, **Tailwind CSS 4**
 - **Supabase**: PostgreSQL with row level security, Auth, Storage
 - **Stripe** (test mode) for subscriptions: planned (Phase 15)
-- **Recharts** for charts: planned (Phase 13)
+- **Recharts** for charts (Phase 13)
 - **shadcn/ui** (Radix UI and Lucide icons) for the interface components
 - **Playwright** for tests
 - **Supabase CLI** for migrations and generated types
@@ -76,12 +76,12 @@ Read more:
 - **Phase 8** Workspace management: built and tested (create, edit, delete with confirmation, public address, time zone with the change warning, plan usage, locked workspaces). 106 unit checks, 146 UI checks and 25 database tests pass (T12, T16 part 1, T17 part 1 and T20 are new).
 - **Phase 9** Resource management: built and tested (create, edit, delete, slot length, capacity, availability switch, plan usage, locked state, and an image per resource: JPG, PNG or WebP up to 2 MB, checked on the server by size and file signature). 144 unit checks, 171 UI checks and 38 database tests pass (T12 resources part, T17 part 2, T18 and T21 are new).
 - **Phase 10** Availability management: built and tested (weekly opening hours per resource, one window per day, `24:00` as end of day, a 7-day slot preview in the workspace's time zone, and a slot library `src/lib/time` that follows the same rules as the database, proved against the live database for the 2026 clock changes of London, New York and Sydney). 209 unit checks, 189 UI checks and 53 database tests pass.
-- **Phase 11** Public booking: planned
-- **Phase 12** Booking management: planned
-- **Phase 13** Dashboard analytics: planned
-- **Phase 14** Embed widgets: planned
+- **Phase 11** Public booking: built and tested (the public page with a day picker and free times in the workspace's named time zone, a booking request with a private status link, a rate limit per visitor, and privacy rules). Migration 8 added a lock to the rate limit and moved image paths to `<resource_id>/<file>`.
+- **Phase 12** Booking management: built and tested (the booking list with status filter, search and paging, details, approve, reject, cancel and delete, a pending-request badge, and a real dashboard overview).
+- **Phase 13** Dashboard analytics: built and tested (a workspace selector; totals, status distribution and a 30-day chart with days in the workspace's time zone for everyone; monthly chart, resource usage and date-range filters for Pro, decided on the server; every chart has a text table). Built in parallel with Phase 14 (see the development log).
+- **Phase 14** Embed widgets: built and tested (`/dashboard/widget` with theme, Pro-only layout and background colour, a preview and a copyable code; `/embed/<slug>` is the booking flow in an iframe and the only page that may be framed; Pro values are ignored for Free owners).
 - **Phase 15** Stripe billing: planned
-- **Phase 16** Agentic tools and parallel development: planned
+- **Phase 16** Agentic tools and parallel development: in progress (Phases 13 and 14 were built at the same time by two background subagents in two git worktrees; evidence in the development log)
 - **Phase 17** Complete testing and bug fixing: planned
 - **Phase 18** README, screenshots and submission reflection: planned
 
