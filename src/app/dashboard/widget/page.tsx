@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { EmptyState } from "@/components/empty-state";
 import { OwnerGate } from "@/components/owner-gate";
 import { PageHeader } from "@/components/page-header";
+import { getEnv } from "@/lib/env";
 import { EmbedCode } from "@/features/embed/components/embed-code";
 import { WidgetForm } from "@/features/embed/components/widget-form";
 import { getWidgetOptions, listWidgetWorkspaces } from "@/features/embed/queries";
@@ -107,7 +108,7 @@ async function WidgetContent({ searchParams }: { searchParams: SearchParams }) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <EmbedCode slug={current.slug} />
+          <EmbedCode slug={current.slug} appUrl={getEnv().NEXT_PUBLIC_APP_URL} />
         </CardContent>
       </Card>
     </>

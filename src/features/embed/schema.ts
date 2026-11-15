@@ -98,13 +98,54 @@ export function effectiveEmbedOptions(saved: EmbedOptions, plan: PlanId): EmbedO
   return { theme: saved.theme, layout: "list", backgroundColor: null };
 }
 
-/** "#ffffff" or "#111111", whichever reads better on the given background. */
-export function readableTextColor(background: string): string {
-  if (!COLOR_PATTERN.test(background)) return "#111111";
-  const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(background.slice(i, i + 2), 16) / 255);
+/** WCAG relative luminance of an exact #rrggbb colour (0 black ... 1 white). */
+export function relativeLuminance(colour: string): number {
+  const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(colour.slice(i, i + 2), 16) / 255);
   const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-  const luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-  return luminance > 0.4 ? "#111111" : "#ffffff";
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/** WCAG contrast ratio of two exact #rrggbb colours (1 to 21). */
+export function contrastRatio(a: string, b: string): number {
+  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+const DARK_TEXT = "#000000"; // pure black: with white as the other choice the better of the two is always at least 4.58:1
+const LIGHT_TEXT = "#ffffff";
+
+/** "#ffffff" or "#000000", whichever has the better contrast on the given background (always at least 4.5:1). */
+export function readableTextColor(background: string): string {
+  if (!COLOR_PATTERN.test(background)) return DARK_TEXT;
+  return contrastRatio(background, DARK_TEXT) >= contrastRatio(background, LIGHT_TEXT) ? DARK_TEXT : LIGHT_TEXT;
+}
+
+/**
+ * The colour variables the widget sets when the owner chose a background colour (Pro). Every part of the
+ * booking form reads these (cards, panels, borders, muted text), so the whole widget follows the colour and
+ * the text keeps its contrast. Only ever called with an exact #rrggbb (checked here again).
+ */
+export function embedColorVariables(background: string): Record<string, string> {
+  if (!COLOR_PATTERN.test(background)) return {};
+  const text = readableTextColor(background);
+  const mix = (percent: number) => `color-mix(in srgb, ${text} ${percent}%, ${background})`;
+  return {
+    "--background": background,
+    "--foreground": text,
+    "--card": background,
+    "--card-foreground": text,
+    "--popover": background,
+    "--popover-foreground": text,
+    // The accent (buttons, the "Selected" word, the chosen time) is the text colour on this background, and its text is the
+    // background colour: always the best contrast the colour allows, whatever colour the owner chose.
+    "--primary": text,
+    "--primary-foreground": background,
+    "--ring": mix(70),
+    "--muted": mix(8),
+    "--muted-foreground": mix(75),
+    "--border": mix(28),
+    "--input": mix(60),
+  };
 }
 
 export const EMBED_HEIGHT = 640;

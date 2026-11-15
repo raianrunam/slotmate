@@ -252,10 +252,44 @@ test.describe("frame headers", () => {
       expect(embed.headers()["content-security-policy"]).toBe("frame-ancestors *");
       expect(embed.headers()["x-frame-options"]).toBeUndefined();
 
-      for (const path of ["/login", "/dashboard", `/book/${fx.slug}`, "/booking/" + "a".repeat(43), "/"]) {
-        const res = await request.get(path);
+      // Real requests to a real server (redirects are NOT followed, so /dashboard is checked itself and not the /login it redirects to).
+      // Phase 14 review: bare /embed, /embedx, a longer status address, an API route, a static file, a Server Action POST,
+      // and an encoded spelling of /booking.
+      const strict = [
+        "/login",
+        "/dashboard",
+        "/dashboard/widget",
+        `/book/${fx.slug}`,
+        "/booking/" + "a".repeat(43),
+        "/booking/" + "a".repeat(43) + "/extra",
+        "/embedx",
+        "/embedded/x",
+        "/api/nothing",
+        "/_next/static/nothing.js",
+        "/embed-theme-dark.js",
+        "/",
+        "/%62ooking/" + "a".repeat(43),
+      ];
+      for (const path of strict) {
+        const res = await request.get(path, { maxRedirects: 0 });
         expect(res.headers()["x-frame-options"], path).toBe("DENY");
         expect(res.headers()["content-security-policy"], path).toBe("frame-ancestors 'none'");
+      }
+      // Bare /embed is the widget rule only (one rule, not two).
+      const bare = await request.get("/embed", { maxRedirects: 0 });
+      expect(bare.headers()["content-security-policy"]).toBe("frame-ancestors *");
+      expect(bare.headers()["x-frame-options"]).toBeUndefined();
+      // A Server Action style POST to the widget page keeps the widget rule; a POST to the login page stays strict.
+      const post = await request.post(`/embed/${fx.slug}`, { data: "x", maxRedirects: 0 });
+      expect(post.headers()["content-security-policy"]).toBe("frame-ancestors *");
+      const postLogin = await request.post("/login", { data: "x", maxRedirects: 0 });
+      expect(postLogin.headers()["content-security-policy"]).toBe("frame-ancestors 'none'");
+      // The status page keeps its strict cache and referrer rules on every spelling of its address, including a longer one.
+      for (const path of ["/booking/" + "a".repeat(43), "/booking/" + "a".repeat(43) + "/extra"]) {
+        const res = await request.get(path, { maxRedirects: 0 });
+        // (a longer address is a not-found page, and Next.js writes its own, equally strict, cache header for that)
+        expect(res.headers()["cache-control"], path).toContain("no-store");
+        expect(res.headers()["referrer-policy"], path).toBe("no-referrer");
       }
 
       // The browser really refuses to show the protected pages in a frame, and shows the widget.
@@ -360,6 +394,69 @@ test.describe("the dashboard widget page", () => {
       expect(await savedOptions(fx.workspaceId)).toEqual({ theme: "dark", layout: "list", background_color: null });
     } finally {
       await fx.cleanup();
+    }
+  });
+
+  test("a custom background colour reaches the whole booking form: every text keeps a readable contrast (EMBED-04)", async ({ page }) => {
+    // Phase 14 review (high): the colour used to be set on the outer wrapper only, so the form's own cards and panels kept
+    // the theme's colours and the text on them became unreadable (navy on the light theme, white on the dark theme).
+    const owner = await proOwner();
+    for (const [theme, colour] of [["light", "#0a1f44"], ["dark", "#f5f0e6"], ["light", "#ff9800"]] as const) {
+      const fx = await makeWorkspace(owner);
+      try {
+        await setOptions(owner, fx.workspaceId, { theme, layout: "list", background_color: colour });
+        await page.goto(`/embed/${fx.slug}`);
+        await expect(page.getByTestId("embed-root")).toBeVisible();
+        await page.getByRole("button", { name: /Room/ }).first().click().catch(() => undefined); // open the form where a resource must be chosen
+        await page.getByLabel("Date", { exact: true }).fill(day(2));
+        const worst = await page.evaluate(() => {
+          const canvas = document.createElement("canvas");
+          canvas.width = canvas.height = 1;
+          const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+          const rgba = (css: string): [number, number, number, number] => {
+            ctx.clearRect(0, 0, 1, 1);
+            ctx.fillStyle = "#000";
+            ctx.fillStyle = css;
+            ctx.fillRect(0, 0, 1, 1);
+            const d = ctx.getImageData(0, 0, 1, 1).data;
+            return [d[0], d[1], d[2], d[3] / 255];
+          };
+          const lum = ([r, g, b]: number[]) => {
+            const f = (v: number) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+            return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+          };
+          const backgroundOf = (el: Element): [number, number, number] => {
+            let node: Element | null = el;
+            while (node) {
+              const c = rgba(getComputedStyle(node).backgroundColor);
+              if (c[3] > 0.99) return [c[0], c[1], c[2]];
+              node = node.parentElement;
+            }
+            return [255, 255, 255];
+          };
+          const out: { text: string; ratio: number }[] = [];
+          const root = document.querySelector('[data-testid="embed-root"]')!;
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            const text = (n.textContent ?? "").trim();
+            const el = n.parentElement;
+            if (!text || !el) continue;
+            const style = getComputedStyle(el);
+            if (style.visibility === "hidden" || style.display === "none" || el.closest("[hidden]")) continue;
+            const fg = rgba(style.color);
+            const bg = backgroundOf(el);
+            const a = lum([fg[0], fg[1], fg[2]]);
+            const b = lum(bg);
+            out.push({ text: text.slice(0, 40), ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) });
+          }
+          out.sort((x, y) => x.ratio - y.ratio);
+          return { count: out.length, worst: out.slice(0, 3) };
+        });
+        expect(worst.count, "the widget has text").toBeGreaterThan(5);
+        for (const item of worst.worst) expect(item.ratio, `${theme} ${colour}: "${item.text}"`).toBeGreaterThanOrEqual(4.5);
+      } finally {
+        await fx.cleanup();
+      }
     }
   });
 

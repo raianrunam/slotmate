@@ -12,22 +12,22 @@ import {
   normalizeEmbedOptions,
   parseEmbedUpdate,
   readableTextColor,
+  contrastRatio,
+  embedColorVariables,
   workspaceIdSchema,
 } from "../../src/features/embed/schema";
+// @ts-expect-error -- Next.js's compiled copy of path-to-regexp ships without type declarations
+import { pathToRegexp } from "next/dist/compiled/path-to-regexp";
 import { BOOKING_SOURCE, EMBED_SOURCE, securityHeaderRules, type HeaderRule } from "../../src/lib/security-headers";
 
 // Phase 14: the widget rules that need no browser, server or database.
 
 const read = (f: string) => readFileSync(path.join(process.cwd(), f), "utf8");
 
-// A tiny stand-in for Next.js path matching, enough for the three sources we use.
+// The REAL matcher: the path-to-regexp copy Next.js itself compiles the header sources with (a home-made stand-in once hid
+// that bare /embed matched two rules and /booking/a/b matched none: Phase 14 review).
 function matches(source: string, pathname: string): boolean {
-  if (source.endsWith("/:path*")) {
-    const base = source.slice(0, -"/:path*".length);
-    return pathname === base || pathname.startsWith(`${base}/`);
-  }
-  if (source.includes(":code")) return new RegExp(`^${source.replace(":code", "[^/]+")}$`).test(pathname);
-  return new RegExp(`^${source}$`).test(pathname);
+  return pathToRegexp(source).test(pathname);
 }
 
 /** The final value of a header for a path (the LAST matching rule wins, as in Next.js). */
@@ -96,9 +96,31 @@ test.describe("reading options safely (EMBED-05)", () => {
     expect(effectiveEmbedOptions(normalizeEmbedOptions(stored), "pro")).toEqual({ theme: "dark", layout: "grid", backgroundColor: "#112233" });
   });
   test("readable text colour: dark text on light, light text on dark", () => {
-    expect(readableTextColor("#ffffff")).toBe("#111111");
+    expect(readableTextColor("#ffffff")).toBe("#000000");
     expect(readableTextColor("#000000")).toBe("#ffffff");
-    expect(readableTextColor("not a colour")).toBe("#111111");
+    expect(readableTextColor("not a colour")).toBe("#000000");
+    // The mid-tones the first version got wrong (threshold 0.4): the better of the two texts always reads at 4.5:1 or more.
+    for (const colour of ["#4caf50", "#ff9800", "#909090", "#808080", "#767676", "#ffeb3b", "#2196f3", "#e91e63", "#0a1f44", "#f5f5f5", "#7b1fa2", "#00bcd4"]) {
+      expect(contrastRatio(colour, readableTextColor(colour)), colour).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(readableTextColor("#4caf50")).toBe("#000000");
+    expect(readableTextColor("#ff9800")).toBe("#000000");
+  });
+  test("the colour variables make every part of the form follow the colour (cards, borders, muted text), never anything else", () => {
+    expect(embedColorVariables("not a colour")).toEqual({});
+    expect(embedColorVariables("javascript:alert(1)")).toEqual({});
+    const navy = embedColorVariables("#0a1f44");
+    expect(navy["--background"]).toBe("#0a1f44");
+    expect(navy["--card"]).toBe("#0a1f44");
+    expect(navy["--foreground"]).toBe("#ffffff");
+    expect(navy["--card-foreground"]).toBe("#ffffff");
+    expect(navy["--primary"]).toBe("#ffffff"); // the accent is the text colour ...
+    expect(navy["--primary-foreground"]).toBe("#0a1f44"); // ... and the text on it is the background
+    expect(Object.keys(navy).sort()).toEqual(["--background", "--border", "--card", "--card-foreground", "--foreground", "--input", "--muted", "--muted-foreground", "--popover", "--popover-foreground", "--primary", "--primary-foreground", "--ring"]);
+    for (const value of Object.values(navy)) expect(value).toMatch(/^(#[0-9a-f]{6}|color-mix\(in srgb, #[0-9a-f]{6} \d+%, #[0-9a-f]{6}\))$/);
+    // Text on the card is the page text, so the card/text pair has the same contrast as the page.
+    const light = embedColorVariables("#ffffff");
+    expect(light["--card-foreground"]).toBe("#000000");
   });
 });
 
@@ -137,12 +159,21 @@ test.describe("frame headers (EMBED-02, SEC)", () => {
     }
   });
   test("everything else is never framed", () => {
-    for (const p of ["/", "/login", "/signup", "/dashboard", "/dashboard/widget", "/dashboard/bookings/1", "/book/acme-studio", "/booking/abc", "/embedded", "/embed", "/auth/confirm", "/pricing", "/x/embed/y"]) {
+    for (const p of ["/", "/login", "/signup", "/dashboard", "/dashboard/widget", "/dashboard/bookings/1", "/book/acme-studio", "/booking/abc", "/embedded", "/embedx", "/api/anything", "/_next/static/chunks/a.js", "/%62ooking/abc", "/auth/confirm", "/pricing", "/x/embed/y"]) {
       const h = headersFor(p);
       expect(h["x-frame-options"], p).toBe("DENY");
       expect(h["content-security-policy"], p).toBe("frame-ancestors 'none'");
       expect(h["x-content-type-options"], p).toBe("nosniff");
     }
+  });
+  test("no path matches two rules, and none matches no rule (so the order of the rules cannot matter)", () => {
+    const paths = ["/", "/embed", "/embed/", "/embed/x", "/embed/a/b", "/embedx", "/embedded/x", "/booking", "/booking/", "/booking/a", "/booking/a/b", "/bookings", "/book/x", "/login", "/dashboard", "/dashboard/widget", "/api/x", "/_next/static/a.js", "/icon.svg", "/x/embed/y", "/x/booking/y"];
+    for (const p of paths) {
+      const hits = securityHeaderRules.filter((r) => matches(r.source, p));
+      expect(hits.length, `${p} matches ${hits.length} rules`).toBe(1);
+    }
+    expect(headersFor("/embed")["content-security-policy"]).toBe("frame-ancestors *"); // bare /embed is the widget rule only
+    expect(headersFor("/booking/a/b")["cache-control"]).toBe("private, no-store, max-age=0"); // a longer status address keeps the strict rules
   });
   test("the status page keeps its own strict rules", () => {
     const h = headersFor("/booking/abcdef");

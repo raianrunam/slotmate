@@ -1,20 +1,16 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { buildEmbedCode } from "@/features/embed/schema";
 
-function subscribeNothing() {
-  return () => {};
-}
-
 // The snippet to paste into another website, with a copy button (EMBED-01, EMBED-07). It holds only the
-// public address of the widget and its size. The address starts with the site the owner is on
-// now; until the browser knows it (first render) the address is shown without the site name.
-export function EmbedCode({ slug }: { slug: string }) {
-  const origin = useSyncExternalStore(subscribeNothing, () => window.location.origin, () => "");
-  const code = buildEmbedCode(origin, slug);
+// public address of the widget and its size. The address starts with SlotMate's own configured address
+// (NEXT_PUBLIC_APP_URL, ARCHITECTURE 7), not with whatever address the owner happens to be on (a preview
+// deployment or localhost would give a code that points at the wrong site: Phase 14 review).
+export function EmbedCode({ slug, appUrl }: { slug: string; appUrl: string }) {
+  const code = buildEmbedCode(appUrl, slug);
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -38,7 +34,7 @@ export function EmbedCode({ slug }: { slug: string }) {
         <code>{code}</code>
       </pre>
       <div className="flex items-center gap-3">
-        <Button type="button" variant="outline" className="h-10 sm:h-8" onClick={copy} disabled={origin === ""}>
+        <Button type="button" variant="outline" className="h-10 sm:h-8" onClick={copy}>
           {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}
           {copied ? "Copied" : "Copy code"}
         </Button>

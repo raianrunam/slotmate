@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { TableSkeleton } from "@/components/loading-skeletons";
 import { LogoMark } from "@/components/logo";
 import { EmbedTheme } from "@/features/embed/components/embed-theme";
-import { readableTextColor } from "@/features/embed/schema";
+import { embedColorVariables } from "@/features/embed/schema";
 import { BookingFlow } from "@/features/public-booking/components/booking-flow";
 import { getPublicWorkspace } from "@/features/public-booking/queries";
 import { SLUG } from "@/features/public-booking/schema";
@@ -27,8 +27,9 @@ async function Widget({ params }: { params: Promise<{ slug: string }> }) {
   const today = todayInZone(workspace.timeZone);
   const label = zoneLabel(workspace.timeZone);
 
-  // backgroundColor is either null or an exact #rrggbb (validated when read), so it can be a style value.
-  const style = backgroundColor ? { backgroundColor, color: readableTextColor(backgroundColor) } : undefined;
+  // backgroundColor is either null or an exact #rrggbb (validated when read). It becomes colour VARIABLES, so every
+  // part of the form (cards, panels, borders, muted text) follows it and keeps a readable contrast.
+  const style = backgroundColor ? (embedColorVariables(backgroundColor) as React.CSSProperties) : undefined;
 
   return (
     <div
@@ -38,6 +39,10 @@ async function Widget({ params }: { params: Promise<{ slug: string }> }) {
       data-theme={theme}
       data-layout={layout}
     >
+      {/* A tiny static script, run while the page is parsed (before it is shown): the widget follows the OWNER's theme from the
+          first paint, not the visitor's system setting. One of two fixed files, chosen from a validated value. */}
+      {/* eslint-disable-next-line @next/next/no-sync-scripts -- synchronous on purpose: it must run before the first paint */}
+      <script src={theme === "dark" ? "/embed-theme-dark.js" : "/embed-theme-light.js"} />
       <EmbedTheme theme={theme} />
       <div className="grid gap-5">
         <div>
