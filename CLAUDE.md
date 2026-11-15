@@ -52,6 +52,13 @@ This file adds only what is specific to Claude Code.
 - If a database test fails, decide whether the test or the database is wrong. Fix a
   test bug. If the database is wrong, stop and explain; do not patch it in place.
 
+## Project tools (Phase 16, see `docs/AGENTIC_TOOLS.md`)
+
+- **Hooks** in `.claude/hooks/` (wired in `.claude/settings.json`): editing a migration that Git already tracks is denied; `supabase db push` without `--dry-run`, `git push --force` and `git reset --hard` ask the owner first; commands that read or copy the real env files are denied; ESLint runs after every `.ts`/`.tsx` edit and its problems are reported back (fix them). If a hook blocks you, do not look for a way around it: explain and ask.
+- **Subagents** in `.claude/agents/`: `security-reviewer` and `migration-reviewer` (read-only; use them for SQL, grants, policies, Server Actions, Stripe) and `test-runner` (runs the checks, never edits). Give them only the files and documents they need.
+- **Skill** `.claude/skills/slotmate-phase`: the phase workflow, the approval rules and the known traps. Use it when starting or finishing a phase.
+- **MCP**: `.mcp.json` registers the Playwright MCP server (the owner approves it at start-up).
+
 ## Working style
 
 - The owner is a beginner: explain decisions in plain words, give Windows

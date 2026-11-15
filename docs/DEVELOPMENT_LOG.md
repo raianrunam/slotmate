@@ -344,6 +344,15 @@ Authentication (Phase 7):
 
 ---
 
+## Phase 16 — Agentic tools (2026-11-15)
+
+- **Hooks** (`.claude/hooks/*.mjs`, wired in `.claude/settings.json`, the existing deny rules kept): a PreToolUse hook denies edits to any migration Git already tracks; a PreToolUse Bash hook asks the owner before `supabase db push` without `--dry-run`, `git push --force` and `git reset --hard`, and denies commands that read or copy the real env files; a PostToolUse hook runs ESLint on edited `.ts`/`.tsx` files and reports problems without blocking. 56 unit checks in `tests/unit/hooks.spec.ts` feed sample JSON to each script as a real process. Live demo in the same session: an edit of a pushed migration was blocked, `npx supabase db push --remote --dry-run` ran, an env-file read was blocked (`phase16-hooks-demo.txt`). The hook also blocked three of the agent's own shell commands whose text named an env file, so those edits were moved into script files.
+- **Custom subagents** `security-reviewer`, `migration-reviewer` (read-only) and `test-runner` (no edit tools) in `.claude/agents/`, with checklists distilled from the real review reports; and the skill `.claude/skills/slotmate-phase` (workflow, approval rules, known traps). **Found while doing it:** Claude Code loads agents at session start, so `security-reviewer` was "not found" in the session that created it; the review ran through a general-purpose subagent given the same file. They work after a restart.
+- **Playwright MCP:** `.mcp.json` (`@playwright/mcp@0.0.85`, pinned, nothing added to `package.json`). `claude mcp list` showed it as pending approval, so it could not be used in this session and the screenshot step (375 px and 1280 px) was not done.
+- **Security review of the whole app** (`phase16-security-review.txt`): 0 critical, 0 high, 2 medium, 4 low, 4 info. Not fixed; see `docs/AGENTIC_TOOLS.md` section 6.
+- **OpenSpec** skipped (a new package and a second planning format; the skill's plan-file step does the job). Reason in `docs/AGENTIC_TOOLS.md` section 10.
+- **Checks:** `npx tsc --noEmit` clean, `npx eslint` clean, `npm run test:unit` 416 passed. UI and database tests were not run (no application or database change).
+- **No** migration, database, dependency or Supabase change.
 ## Change history
 
 - **2026-11-14** — Created (Phase 5) with entries for Phases 1–5.
@@ -355,3 +364,4 @@ Authentication (Phase 7):
 - **2026-11-15** — Added the Phase 12 entry.
 - **2026-11-15** — Added the Phase 13 and Phase 14 entries and the parallel development evidence.
 - **2026-11-15** — Added the Phase 15 entry.
+- **2026-11-15** — Added the Phase 16 entry.

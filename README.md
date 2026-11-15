@@ -61,6 +61,7 @@ Read more:
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): how the parts fit together and where each security check happens.
 - [`docs/DATABASE.md`](docs/DATABASE.md): tables, rules, functions, row level security, migration plan.
 - [`docs/TESTING.md`](docs/TESTING.md): how the database tests work and what they prove.
+- [`docs/AGENTIC_TOOLS.md`](docs/AGENTIC_TOOLS.md): every agentic technique used (rules, deny rules, hooks, custom subagents, a skill, reviewer subagents, parallel worktrees, Playwright, MCP) with dates and evidence.
 - [`docs/DEVELOPMENT_LOG.md`](docs/DEVELOPMENT_LOG.md): the development diary, including agent mistakes and open items.
 - [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md): the rules AI coding agents follow in this repository.
 
@@ -81,7 +82,7 @@ Read more:
 - **Phase 13** Dashboard analytics: built and tested (a workspace selector; totals, status distribution and a 30-day chart with days in the workspace's time zone for everyone; monthly chart, resource usage and date-range filters for Pro, decided on the server; every chart has a text table). Built in parallel with Phase 14 (see the development log).
 - **Phase 14** Embed widgets: built and tested (`/dashboard/widget` with theme, Pro-only layout and background colour, a preview and a copyable code; `/embed/<slug>` is the booking flow in an iframe and the only page that may be framed; Pro values are ignored for Free owners).
 - **Phase 15** Stripe billing (test mode): built. Upgrade through Stripe Checkout, Manage/cancel through the Customer Portal, a signed webhook that asks Stripe for the current subscription before saving it, a real billing page, and the downgrade selection (the owner picks 1 workspace and up to 3 resources; nothing is chosen for them). 360 unit checks, 260 UI checks and 92 database tests pass, including the end-to-end tests against real Stripe test objects (one known-flaky bookings test passes when re-run alone; see the development log).
-- **Phase 16** Agentic tools and parallel development: in progress (Phases 13 and 14 were built at the same time by two background subagents in two git worktrees; evidence in the development log)
+- **Phase 16** Agentic tools and parallel development: built (three hooks, three custom subagents, a phase skill, a Playwright MCP config and a whole-app security review; Phases 13 and 14 were built at the same time by two background subagents in two git worktrees). Details and evidence: [`docs/AGENTIC_TOOLS.md`](docs/AGENTIC_TOOLS.md). The MCP server and the new subagents need a restart of Claude Code to become active.
 - **Phase 17** Complete testing and bug fixing: planned
 - **Phase 18** README, screenshots and submission reflection: planned
 
