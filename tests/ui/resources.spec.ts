@@ -256,7 +256,8 @@ test.describe("image (RES-05, D9, S1)", () => {
     await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
     await expect.poll(async () => (await storedResources(owner.id))[0].image_path).not.toBe(stored.image_path);
     const [after] = await storedResources(owner.id);
-    expect(await listResourceFiles(ids[0]), "only the new file remains").toEqual([after.image_path]);
+    // The old file is removed right after the new path is saved (a moment later), so wait for it instead of reading once.
+    await expect.poll(() => listResourceFiles(ids[0]), { message: "only the new file remains" }).toEqual([after.image_path]);
     expect(await listResourceFiles(ids[0])).not.toContain(stored.image_path);
 
     // Remove.

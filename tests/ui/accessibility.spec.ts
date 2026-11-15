@@ -125,8 +125,21 @@ function detail(node: { any: { data?: unknown }[] }): string {
   return d?.contrastRatio ? ` [${d.contrastRatio}:1, text ${d.fgColor} on ${d.bgColor}]` : "";
 }
 
+async function analyze(page: Page) {
+  // A page that is still navigating (for example the reset-password page settling after its session check)
+  // destroys the context mid-scan: wait for it to settle and scan again, a few times.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await page.waitForLoadState("load");
+      return await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    } catch (error) {
+      if (attempt >= 3 || !/context was destroyed|navigation/i.test(String(error))) throw error;
+    }
+  }
+}
+
 async function scan(page: Page) {
-  const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+  const results = await analyze(page);
   const lines = (impacts: string[]) =>
     results.violations
       .filter((v) => impacts.includes(v.impact ?? ""))

@@ -44,7 +44,7 @@ type Row = {
 };
 
 /** afterFirstRead runs once, right after the handler has read the owner row (to change it behind the handler's back). */
-function fakeAdmin(row: Row, afterFirstRead: () => void = () => undefined) {
+function fakeAdmin(row: Row, afterFirstRead: () => void = () => undefined, everyRead = false) {
   let readDone = false;
   const writes: Partial<Row>[] = [];
   const admin = {
@@ -54,7 +54,7 @@ function fakeAdmin(row: Row, afterFirstRead: () => void = () => undefined) {
         eq: (column: keyof Row, value: string) => ({
           maybeSingle: async () => {
             const data = row[column] === value ? { ...row } : null;
-            if (data && !readDone) {
+            if (data && (!readDone || everyRead)) {
               readDone = true;
               afterFirstRead();
             }
@@ -240,16 +240,27 @@ test("LOW-1: a rate-limit secret shorter than 32 characters fails closed; the lo
   }
 });
 
-test("Phase 17 MEDIUM-1: a write based on an OLD copy of the row changes nothing (500, retried with a fresh read)", async () => {
-  // The owner has no subscription when the handler reads the row; while it waits for Stripe, another delivery links sub_other.
+test("Phase 17 MEDIUM-1: a write based on an OLD copy of the row changes nothing; the handler reads again and decides again", async () => {
+  // The owner has no subscription when the handler reads the row; right after, another delivery links sub_other.
   const row = storedRow(null);
   const { admin, writes } = fakeAdmin(row, () => Object.assign(row, { plan: "pro", status: "active", stripe_subscription_id: "sub_other" }));
   const stripe = stubStripe({ sub_a: [subscription("sub_a", "canceled")] });
   const res = await send(stripe, admin, "customer.subscription.updated", { id: "sub_a", customer: "cus_1" });
-  expect(res.status).toBe(500);
+  expect(res.status, "after the fresh read this is only an old, ended subscription: nothing to do").toBe(200);
   expect(writes, "the stale write was refused by its condition").toEqual([]);
   expect(row.stripe_subscription_id, "the newer link survived").toBe("sub_other");
   expect(row.plan).toBe("pro");
+});
+
+test("Phase 17 MEDIUM-1: a row that keeps changing under the handler ends in 500 (Stripe retries), never in a blind write", async () => {
+  const row = storedRow(null);
+  let n = 0;
+  // After every read the row is changed to a different subscription id, so every conditional save finds a changed row.
+  const { admin, writes } = fakeAdmin(row, () => Object.assign(row, { plan: "pro", status: "active", stripe_subscription_id: `sub_moving_${++n}` }), true);
+  const stripe = stubStripe({ sub_a: [subscription("sub_a", "active")] });
+  const res = await send(stripe, admin, "checkout.session.completed", { mode: "subscription", subscription: "sub_a", customer: "cus_1", client_reference_id: OWNER });
+  expect(res.status).toBe(500);
+  expect(writes).toEqual([]);
 });
 
 test("Phase 17 MEDIUM-1: the extra subscription is not cancelled when the stored one changed meanwhile", async () => {

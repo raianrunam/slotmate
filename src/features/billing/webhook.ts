@@ -250,51 +250,66 @@ async function handle(request: Request, deps: WebhookDeps): Promise<Response> {
   if (first === "error") return tryAgain();
   const proPriceId = getProPriceId();
 
-  // 6: owner first. The Pro-price check only gates LINKING a subscription we do not store yet;
-  // for the stored subscription Stripe's real state always wins, so a subscription that leaves the
-  // Pro price (a price rotation, a plan switch in the portal) ends Pro here (MEDIUM-1 of Phase 16).
-  const match = await findOwner(admin, target, first);
-  if (match === "error") return tryAgain();
-  if (!match) return await skip("unknown_owner"); // not one of ours: nothing to change, no retry wanted
-  const isStored = match.currentSubscriptionId === target.subscriptionId;
-  if (first && !isStored && !containsProPrice(first, proPriceId)) return await skip("not_pro_price");
+  // Steps 6 and 7 run as one attempt. If the save finds the row changed by another delivery meanwhile
+  // ("conflict"), the whole attempt is repeated from a fresh read (a few times), because the other delivery
+  // usually did the same or a compatible job. Only when it keeps conflicting do we answer 500 for Stripe's retry.
+  const attempt = async (): Promise<Response | "conflict"> => {
+    // 6: owner first. The Pro-price check only gates LINKING a subscription we do not store yet;
+    // for the stored subscription Stripe's real state always wins, so a subscription that leaves the
+    // Pro price (a price rotation, a plan switch in the portal) ends Pro here (MEDIUM-1 of Phase 16).
+    const match = await findOwner(admin, target, first);
+    if (match === "error") return tryAgain();
+    if (!match) return await skip("unknown_owner"); // not one of ours: nothing to change, no retry wanted
+    const isStored = match.currentSubscriptionId === target.subscriptionId;
+    if (first && !isStored && !containsProPrice(first, proPriceId)) return await skip("not_pro_price");
 
-  let row: SubscriptionRow;
-  if (first) {
-    row = rowFromStripe(first, proPriceId);
-  } else if (target.deleted && isStored) {
-    row = endedRow(target.customerId ?? match.currentCustomerId);
-  } else {
+    let row: SubscriptionRow;
+    if (first) {
+      row = rowFromStripe(first, proPriceId);
+    } else if (target.deleted && isStored) {
+      row = endedRow(target.customerId ?? match.currentCustomerId);
+    } else {
+      return await markProcessed();
+    }
+    if (row.plan === "free" && row.stripe_customer_id === null) row.stripe_customer_id = match.currentCustomerId;
+
+    const decision = decideWrite(row, match.currentSubscriptionId, target.subscriptionId!);
+    if (decision === "ignore_second" && first) {
+      // The decision was made on a row read a moment ago: read it again, and only go on if it still holds the same subscription.
+      if ((await currentStoredId(admin, match.ownerId)) !== match.currentSubscriptionId) return tryAgain();
+      // A second paid subscription for an owner who already has one (MEDIUM-2 of Phase 16): refund and cancel it.
+      const outcome = await cancelExtraSubscription(stripe, first, match.currentSubscriptionId!);
+      if (outcome === "retry") return tryAgain();
+      return await skip(outcome === "cancelled" ? "ignore_second_cancelled" : "ignore_second");
+    }
+    if (decision !== "save") return await skip(decision);
+
+    const firstSave = await saveRow(admin, match.ownerId, row, match.currentSubscriptionId);
+    if (firstSave === "conflict") return "conflict";
+    if (firstSave === "error") return tryAgain();
+
+    // Two different messages (for example updated and deleted) can run at once and each read an older state.
+    // Ask Stripe again and correct the row if it moved meanwhile (twice at most).
+    for (let round = 0; round < 2; round++) {
+      const fresh = await fetchSubscription(stripe, target.subscriptionId!);
+      if (fresh === "error") return tryAgain();
+      if (!fresh) break;
+      const next = rowFromStripe(fresh, proPriceId);
+      if (next.plan === "free" && next.stripe_customer_id === null) next.stripe_customer_id = row.stripe_customer_id;
+      if (sameRow(next, row)) break;
+      const again = await saveRow(admin, match.ownerId, next, row.stripe_subscription_id);
+      if (again === "conflict") return "conflict";
+      if (again === "error") return tryAgain();
+      row = next;
+    }
     return await markProcessed();
-  }
-  if (row.plan === "free" && row.stripe_customer_id === null) row.stripe_customer_id = match.currentCustomerId;
 
-  const decision = decideWrite(row, match.currentSubscriptionId, target.subscriptionId!);
-  if (decision === "ignore_second" && first) {
-    // The decision was made on a row read a moment ago: read it again, and only go on if it still holds the same subscription.
-    if ((await currentStoredId(admin, match.ownerId)) !== match.currentSubscriptionId) return tryAgain();
-    // A second paid subscription for an owner who already has one (MEDIUM-2 of Phase 16): refund and cancel it.
-    const outcome = await cancelExtraSubscription(stripe, first, match.currentSubscriptionId!);
-    if (outcome === "retry") return tryAgain();
-    return await skip(outcome === "cancelled" ? "ignore_second_cancelled" : "ignore_second");
+  };
+  for (let tries = 0; tries < 4; tries++) {
+    const result = await attempt();
+    if (result !== "conflict") return result;
   }
-  if (decision !== "save") return await skip(decision);
-
-  if ((await saveRow(admin, match.ownerId, row, match.currentSubscriptionId)) !== "ok") return tryAgain();
-
-  // Two different messages (for example updated and deleted) can run at once and each read an older state.
-  // Ask Stripe again and correct the row if it moved meanwhile (twice at most).
-  for (let round = 0; round < 2; round++) {
-    const fresh = await fetchSubscription(stripe, target.subscriptionId!);
-    if (fresh === "error") return tryAgain();
-    if (!fresh) break;
-    const next = rowFromStripe(fresh, proPriceId);
-    if (next.plan === "free" && next.stripe_customer_id === null) next.stripe_customer_id = row.stripe_customer_id;
-    if (sameRow(next, row)) break;
-    if ((await saveRow(admin, match.ownerId, next, row.stripe_subscription_id)) !== "ok") return tryAgain();
-    row = next;
-  }
-  return await markProcessed();
+  return tryAgain();
 }
 
 const LIVE_STATES = new Set(["active", "trialing", "past_due", "unpaid", "paused"]);
