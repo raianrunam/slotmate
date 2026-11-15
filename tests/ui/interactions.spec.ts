@@ -197,22 +197,7 @@ test.describe("shared components (logged in)", () => {
     await expect(button).toBeFocused();
   });
 
-  test("pagination: 20 per page, page number in the address", async ({ page }) => {
-    await page.goto("/dashboard/bookings");
-    await expect(page.getByText("Showing 1–20 of 135")).toBeVisible();
-    await expect(page.getByText("Page 1 of 7")).toBeVisible();
-    await page.getByRole("link", { name: "Next" }).click();
-    await expect(page).toHaveURL(/page=2$/);
-    await expect(page.getByText("Showing 21–40 of 135")).toBeVisible();
-    await page.goto("/dashboard/bookings?page=999");
-    await expect(page.getByText("Page 7 of 7")).toBeVisible();
-    await expect(page.getByText("Showing 121–135 of 135")).toBeVisible();
-  });
-
-  test("the bookings list shows the time on a phone, where two columns are hidden", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto("/dashboard/bookings");
-    await expect(page.getByText("Meeting room · Tue 10:00").first()).toBeVisible();
-  });
+  // The booking list (20 per page, the address keeps the page, the phone layout) is tested on real data in
+  // tests/ui/bookings.spec.ts (Phase 12).
 
 });
