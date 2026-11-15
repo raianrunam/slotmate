@@ -9,13 +9,13 @@ import {
 test.describe("email-link landing helpers", () => {
   test("token types map to FIXED destinations", () => {
     expect(destinationForToken("recovery")).toBe("/reset-password");
-    for (const type of ["signup", "email", "magiclink", "invite", "email_change"] as const) {
+    for (const type of ["signup", "email"] as const) {
       expect(destinationForToken(type)).toBe("/dashboard");
     }
   });
 
   test("unknown token types are refused (including inherited object keys)", () => {
-    for (const bad of [null, "", "bogus", "RECOVERY", "__proto__", "constructor", "toString", "https://evil.com"]) {
+    for (const bad of [null, "", "bogus", "magiclink", "invite", "email_change", "RECOVERY", "__proto__", "constructor", "toString", "https://evil.com"]) {
       expect(parseTokenType(bad)).toBeNull();
     }
     expect(parseTokenType("recovery")).toBe("recovery");

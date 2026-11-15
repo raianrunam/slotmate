@@ -8,7 +8,7 @@ import { readSession } from "@/lib/supabase/proxy";
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const isDashboard = pathname === "/dashboard" || pathname.startsWith("/dashboard/");
-  const { signedIn, getResponse } = await readSession(request, !isDashboard);
+  const { signedIn, getResponse } = await readSession(request, !isDashboard && pathname !== "/reset-password");
 
   // Redirects must carry the refreshed login cookies.
   const redirectTo = (url: URL) => {
@@ -26,7 +26,9 @@ export async function proxy(request: NextRequest) {
     return redirectTo(url);
   }
 
-  if (!isDashboard && signedIn) {
+  // /reset-password is matched only so the login cookies are refreshed there
+  // (review finding 9); a signed-in visitor must NOT be bounced away from it.
+  if (!isDashboard && signedIn && pathname !== "/reset-password") {
     // /login, /signup, /forgot-password while logged in.
     return redirectTo(new URL("/dashboard", request.url));
   }
@@ -40,5 +42,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/login", "/signup", "/forgot-password"],
+  matcher: ["/dashboard/:path*", "/login", "/signup", "/forgot-password", "/reset-password"],
 };

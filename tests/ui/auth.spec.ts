@@ -232,6 +232,21 @@ test.describe("sign up and forgot password (forms only: no email is sent)", () =
     await expect(page.getByTestId("forgot-success")).toContainText(
       "If an account exists for that address, we sent a link to reset the password.",
     );
+    // The marker cookie is hidden from page scripts and not sent cross-site.
+    const flow = (await page.context().cookies()).find((c) => c.name === "sm_flow");
+    expect(flow?.httpOnly, "sm_flow is httpOnly").toBe(true);
+    expect(flow?.sameSite, "sm_flow sameSite").toBe("Lax");
+  });
+
+  test("sign-up for an address that already has an account shows the same message", async ({ page }) => {
+    const user = await newUser();
+    await page.goto("/signup");
+    await page.getByLabel("Email").fill(user.email);
+    await page.getByLabel("Password").fill(newTestPassword());
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(page.getByTestId("signup-success")).toContainText(
+      "Check your email. If this address can be used, we sent you a link to confirm it.",
+    );
   });
 });
 
@@ -328,5 +343,65 @@ test.describe("/auth/confirm (email-link landing)", () => {
     await page.goto(`/auth/confirm?token_hash=${data!.properties!.hashed_token}&type=signup`);
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.getByTestId("owner-email")).toHaveText(email);
+  });
+});
+
+test.describe("password reset hardening (review findings 2 and 3)", () => {
+  test("an ordinary login session cannot open or use /reset-password", async ({ page }) => {
+    const user = await newUser();
+    await page.goto("/login");
+    await logIn(page, user);
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await page.goto("/reset-password");
+    // Refused (sent to /forgot-password), and a logged-in owner is then moved on
+    // to the dashboard. The reset form is never shown.
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole("heading", { name: "Choose a new password" })).toHaveCount(0);
+  });
+
+  test("resetting the password ends the account's other sessions", async ({ browser }) => {
+    const user = await newUser();
+    const other = await browser.newContext({ baseURL: "http://localhost:3100" });
+    const resetter = await browser.newContext({ baseURL: "http://localhost:3100" });
+    try {
+      const otherPage = await other.newPage();
+      await otherPage.goto("/login");
+      await logIn(otherPage, user);
+      await expect(otherPage).toHaveURL(/\/dashboard$/);
+
+      const { data, error } = await serviceClient().auth.admin.generateLink({
+        type: "recovery",
+        email: user.email,
+      });
+      expect(error).toBeNull();
+      const resetPage = await resetter.newPage();
+      await resetPage.goto(`/auth/confirm?token_hash=${data!.properties!.hashed_token}&type=recovery`);
+      await expect(resetPage).toHaveURL(/\/reset-password$/);
+      const fresh = newTestPassword();
+      await resetPage.getByLabel("New password", { exact: true }).fill(fresh);
+      await resetPage.getByLabel("Confirm new password").fill(fresh);
+      await resetPage.getByRole("button", { name: "Save password" }).click();
+      await expect(resetPage).toHaveURL(/\/login\?notice=password-updated$/);
+
+      // The first browser's session is no longer accepted.
+      await otherPage.goto("/dashboard");
+      await expect(otherPage).toHaveURL(/\/login/);
+      await expect(otherPage.getByTestId("owner-email")).toHaveCount(0);
+    } finally {
+      await other.close();
+      await resetter.close();
+    }
+  });
+});
+
+test.describe("security headers (review finding 8)", () => {
+  test("pages cannot be framed, but the embeddable widget can", async ({ request }) => {
+    const login = await request.get("/login");
+    expect(login.headers()["x-frame-options"]).toBe("DENY");
+    expect(login.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
+    expect(login.headers()["x-content-type-options"]).toBe("nosniff");
+    expect(login.headers()["referrer-policy"]).toBe("strict-origin-when-cross-origin");
+    const embed = await request.get("/embed/sample-workspace");
+    expect(embed.headers()["x-frame-options"]).toBeUndefined();
   });
 });

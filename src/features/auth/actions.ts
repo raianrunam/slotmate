@@ -7,7 +7,7 @@ import { getEnv } from "@/lib/env";
 import { getOwner } from "@/lib/auth";
 import { safeNext } from "@/lib/safe-redirect";
 import { createClient } from "@/lib/supabase/server";
-import { FLOW_COOKIE, RECOVERY_FLOW } from "@/features/auth/flow";
+import { FLOW_COOKIE, RECOVERY_FLOW, RECOVERY_SESSION_COOKIE } from "@/features/auth/flow";
 import {
   fieldErrorsFrom,
   forgotPasswordSchema,
@@ -44,13 +44,19 @@ async function setFlowCookie(value: string | null) {
   });
 }
 
-function isRateLimit(error: { code?: string; status?: number }) {
-  return (
-    error.code === "over_email_send_rate_limit" ||
-    error.code === "over_request_rate_limit" ||
-    error.status === 429
-  );
+// Only the IP-level limit is shown to the visitor. The per-address email limit
+// is treated like success on sign-up, because showing it would reveal whether an
+// address already has an account (review finding 1).
+function isRequestRateLimit(error: { code?: string; status?: number }) {
+  return error.code === "over_request_rate_limit";
 }
+
+function isEmailRateLimit(error: { code?: string; status?: number }) {
+  return error.code === "over_email_send_rate_limit";
+}
+
+const SIGNUP_SUCCESS =
+  "Check your email. If this address can be used, we sent you a link to confirm it. Open the link in this same browser.";
 
 export async function signUp(_prev: FormState, formData: FormData): Promise<FormState> {
   const fields = readFields(formData, ["email", "password"]);
@@ -69,9 +75,9 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
     password: parsed.data.password,
     options: { emailRedirectTo: `${getEnv().NEXT_PUBLIC_APP_URL}/auth/confirm` },
   });
-  if (error) {
+  if (error && !isEmailRateLimit(error)) {
     console.error("signUp failed", { code: error.code, status: error.status });
-    if (isRateLimit(error)) {
+    if (isRequestRateLimit(error)) {
       return { status: "error", message: RATE_LIMIT_ERROR, email: parsed.data.email };
     }
     if (error.code === "weak_password") {
@@ -86,11 +92,7 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
 
   await setFlowCookie(null);
   // The same text whether or not the address already has an account (AUTH-01).
-  return {
-    status: "success",
-    message:
-      "Check your email. If this address can be used, we sent you a link to confirm it. Open the link in this same browser.",
-  };
+  return { status: "success", message: SIGNUP_SUCCESS };
 }
 
 export async function logIn(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -120,7 +122,7 @@ export async function logIn(_prev: FormState, formData: FormData): Promise<FormS
         email: parsed.data.email,
       };
     }
-    if (isRateLimit(error)) {
+    if (isRequestRateLimit(error) || error.status === 429) {
       return { status: "error", message: "Too many attempts. Please wait a few minutes and try again.", email: parsed.data.email };
     }
     // Wrong email and wrong password give the same text (AUTH-02).
@@ -163,7 +165,10 @@ export async function forgotPassword(_prev: FormState, formData: FormData): Prom
 
 export async function resetPassword(_prev: FormState, formData: FormData): Promise<FormState> {
   // Needs the session created by the email link (/auth/confirm).
-  if (!(await getOwner())) {
+  // Needs the session AND the marker /auth/confirm leaves when a reset link
+  // was opened (an ordinary login session may not skip the old password).
+  const store = await cookies();
+  if (!(await getOwner()) || !store.has(RECOVERY_SESSION_COOKIE)) {
     redirect("/forgot-password?error=expired");
   }
 
@@ -186,7 +191,10 @@ export async function resetPassword(_prev: FormState, formData: FormData): Promi
     return { status: "error", message: GENERIC_ERROR };
   }
 
-  await supabase.auth.signOut({ scope: "local" });
+  // "global": after a password reset every session of the account ends, so a
+  // stolen session stops working (review finding 2). Normal log out stays local.
+  await supabase.auth.signOut({ scope: "global" });
   await setFlowCookie(null);
+  store.delete(RECOVERY_SESSION_COOKIE);
   redirect("/login?notice=password-updated");
 }

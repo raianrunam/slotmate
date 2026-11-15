@@ -20,6 +20,19 @@ export default async function globalSetup(config: FullConfig) {
     await page.getByLabel("Password").fill(owner.password);
     await page.getByRole("button", { name: "Log in" }).click();
     await page.waitForURL("**/dashboard");
+    // Marker that /auth/confirm leaves when a reset link was opened; lets the
+    // /reset-password page shell be tested with this session.
+    await context.addCookies([
+      {
+        name: "sm_recovery",
+        value: "1",
+        domain: "localhost",
+        path: "/",
+        httpOnly: true,
+        sameSite: "Lax",
+        expires: Math.floor(Date.now() / 1000) + 24 * 3600,
+      },
+    ]);
     await context.storageState({ path: OWNER_STATE });
   } finally {
     await browser.close();

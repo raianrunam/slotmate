@@ -7,6 +7,8 @@ import {
   FLOW_COOKIE,
   parseTokenType,
   RECOVERY_FLOW,
+  RECOVERY_SESSION_COOKIE,
+  RECOVERY_SESSION_SECONDS,
 } from "@/features/auth/flow";
 
 // The ONLY Route Handler of Phase 7 (A2): where the links in Supabase's emails
@@ -24,10 +26,20 @@ export async function GET(request: NextRequest) {
   const flowCookie = request.cookies.get(FLOW_COOKIE)?.value;
   const wasRecovery = flowCookie === RECOVERY_FLOW;
 
-  const go = (path: string) => {
+  // clearFlow: the marker is single-use once a link was really processed. A
+  // request with no link in it must not clear it (review finding 6).
+  const go = (path: string, clearFlow = true) => {
     const response = NextResponse.redirect(new URL(path, request.url));
-    // The marker is single-use, whatever happened.
-    response.cookies.delete(FLOW_COOKIE);
+    if (clearFlow) response.cookies.delete(FLOW_COOKIE);
+    if (path === "/reset-password") {
+      response.cookies.set(RECOVERY_SESSION_COOKIE, "1", {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+        maxAge: RECOVERY_SESSION_SECONDS,
+      });
+    }
     response.headers.set("Cache-Control", "private, no-store");
     return response;
   };
@@ -59,5 +71,5 @@ export async function GET(request: NextRequest) {
     return go(destinationForToken(type));
   }
 
-  return go(failureDestination(wasRecovery));
+  return go(failureDestination(wasRecovery), false);
 }

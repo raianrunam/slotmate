@@ -21,7 +21,7 @@ const rel = (f: string) => path.relative(process.cwd(), f).replaceAll("\\", "/")
 test("every dashboard page uses OwnerGate or requireOwner (A3 layer 2)", () => {
   const pages = files.filter((f) => /src[\\/]app[\\/]dashboard[\\/](.*[\\/])?page\.tsx$/.test(f));
   expect(pages.length, "found the dashboard pages").toBeGreaterThanOrEqual(8);
-  const missing = pages.filter((f) => !/OwnerGate|requireOwner/.test(read(f))).map(rel);
+  const missing = pages.filter((f) => !/<OwnerGate[\s>]|await requireOwner\(/.test(read(f))).map(rel);
   expect(missing, "dashboard pages without an owner check").toEqual([]);
 });
 

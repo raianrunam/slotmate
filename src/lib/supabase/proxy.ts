@@ -27,13 +27,18 @@ export async function readSession(request: NextRequest, verify = false) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet, headers) {
           for (const { name, value } of cookiesToSet) {
             request.cookies.set(name, value);
           }
           response = NextResponse.next({ request });
           for (const { name, value, options } of cookiesToSet) {
             response.cookies.set(name, value, hardenCookie(options));
+          }
+          // Supabase asks for no-cache headers on responses that carry session
+          // cookies, so no shared cache stores them (review finding 7).
+          for (const [key, value] of Object.entries(headers)) {
+            response.headers.set(key, value);
           }
         },
       },

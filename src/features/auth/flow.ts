@@ -1,16 +1,14 @@
 // Pure helpers for the email-link landing (/auth/confirm). No imports, so they
 // are easy to unit test.
 
-// Which one-time-token types we accept in the token_hash form, and where each
+// Only the types SlotMate really uses (review finding 4); add more when a
+// feature needs them. Which one-time-token types we accept in the token_hash form, and where each
 // one lands. Destinations are FIXED paths: no address is ever taken from the
 // link (no open redirect).
 const TOKEN_TYPE_DESTINATIONS = {
   recovery: "/reset-password",
   signup: "/dashboard",
   email: "/dashboard",
-  magiclink: "/dashboard",
-  invite: "/dashboard",
-  email_change: "/dashboard",
 } as const;
 
 export type TokenType = keyof typeof TOKEN_TYPE_DESTINATIONS;
@@ -25,6 +23,12 @@ export function parseTokenType(value: string | null): TokenType | null {
 export function destinationForToken(type: TokenType): string {
   return TOKEN_TYPE_DESTINATIONS[type];
 }
+
+// Set by /auth/confirm when a link has opened the password-reset form. The reset
+// page and action require it, so an ordinary login session cannot change the
+// password without the old one (review finding 3). Lives 15 minutes.
+export const RECOVERY_SESSION_COOKIE = "sm_recovery";
+export const RECOVERY_SESSION_SECONDS = 15 * 60;
 
 // Used for the PKCE ?code= form, which does not say what kind of email it came
 // from. The forgot-password action leaves a short-lived marker cookie in the
