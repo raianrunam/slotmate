@@ -1,4 +1,4 @@
-import { assertNoLeftovers, removeOrphanBucketFiles, sweepTestUsers } from './helpers'
+import { assertNoLeftovers, clearLedger, removeOrphanBucketFiles, sweepTestUsers } from './helpers'
 
 // Runs once after all database tests. Each spec file already deletes its own
 // test users in afterAll; this removes any user left behind by a crash.
@@ -11,4 +11,5 @@ export default async function globalTeardown(): Promise<void> {
   if (orphans > 0) console.warn(`global teardown: removed ${orphans} leftover test file(s) from the image bucket`)
   // Permanent check: fails the run if any test user or test file remains.
   await assertNoLeftovers()
+  clearLedger()
 }

@@ -92,6 +92,8 @@ export async function saveAvailability(_prev: AvailabilityFormState, formData: F
       supabase.from("resource_availability").delete().eq("resource_id", resource.id).in("weekday", removed).select("weekday"),
     );
     if (res.error) return fail("delete", res.error);
+    // RLS can turn a delete into a silent no-op (for example a lock that just appeared): check it.
+    if (!res.data || res.data.length !== removed.length) return { status: "error", message: FRIENDLY.notAllowed };
   }
 
   revalidatePath("/dashboard", "layout");

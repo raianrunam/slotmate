@@ -581,21 +581,32 @@ test.describe("image upload edge cases (Phase 9 review carry-overs)", () => {
     });
   }
 
-  test("after an upload the resource folder holds ONLY the recorded file (strays are swept)", async ({ page }) => {
+  // A file that is only seconds old might belong to an upload still in progress (uploaded, path not
+  // recorded yet), so the sweep leaves it alone (Phase 10 review finding 2: two simultaneous uploads must
+  // not delete each other's file). Old strays are swept; the delete of the resource takes everything.
+  test("a young stray file survives an upload (race safety); the previous image is deleted at once; the delete takes all", async ({ page }) => {
     const { owner, ids } = await setup(page);
-    // A stray file in the folder (as a concurrent upload or a failed removal would leave).
     const stray = `${owner.id}/${ids[0]}/${crypto.randomUUID()}.png`;
     expect((await serviceClient().storage.from("resource-images").upload(stray, PNG_BYTES, { contentType: "image/png" })).error).toBeNull();
     await page.goto(`/dashboard/resources/${ids[0]}`);
     await page.getByLabel("Upload an image").setInputFiles(png());
     await page.getByRole("button", { name: "Upload image" }).click();
     await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
-    const [stored] = await storedResources(owner.id);
-    await expect.poll(() => listResourceFiles(owner.id, ids[0])).toEqual([stored.image_path]);
+    const [first] = await storedResources(owner.id);
+    expect((await listResourceFiles(owner.id, ids[0])).sort(), "the young stray is still there").toEqual([first.image_path, stray].sort());
 
-    // Removing the image sweeps the folder empty too.
-    await page.getByRole("button", { name: "Remove image" }).click();
-    await expect(page.getByTestId("image-message")).toHaveText("Image removed.");
-    await expect.poll(() => listResourceFiles(owner.id, ids[0])).toEqual([]);
+    // A replace deletes the previous recorded image straight away (even though it is young)...
+    await page.getByLabel("Replace the image").setInputFiles(png(PNG_BYTES_2, "second.png"));
+    await page.getByRole("button", { name: "Replace image" }).click();
+    await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
+    await expect.poll(async () => (await storedResources(owner.id))[0].image_path).not.toBe(first.image_path);
+    const [second] = await storedResources(owner.id);
+    await expect.poll(async () => (await listResourceFiles(owner.id, ids[0])).sort()).toEqual([second.image_path, stray].sort());
+
+    // ...and deleting the resource removes everything, strays included.
+    await page.getByRole("button", { name: "Delete resource Room 1" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Delete resource", exact: true }).click();
+    await expect(page).toHaveURL(/notice=deleted/);
+    expect(await listResourceFiles(owner.id, ids[0])).toEqual([]);
   });
 });

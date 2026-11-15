@@ -1,5 +1,4 @@
 import { tzOffset } from "@date-fns/tz";
-import { addDays } from "date-fns";
 
 // Slot rules (AVAIL-01 to AVAIL-05, D5 to D8, ARCHITECTURE 5.2 and 5.4).
 //
@@ -151,7 +150,8 @@ export function todayInZone(timeZone: string, now: Date = new Date()): string {
 
 /** The date `days` after (or before) another date. */
 export function addDaysToDate(date: string, days: number): string {
-  return addDays(new Date(dateToWall(date)), days).toISOString().slice(0, 10);
+  // Plain UTC arithmetic on the calendar date: independent of the server's own time zone.
+  return new Date(dateToWall(date) + days * DAY).toISOString().slice(0, 10);
 }
 
 // ---------------------------------------------------------------------------

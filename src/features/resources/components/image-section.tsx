@@ -31,7 +31,10 @@ export function ImageSection({
     async (prev: ResourceFormState, formData: FormData): Promise<ResourceFormState> => {
       try {
         return formData.get("intent") === "remove" ? await removeImage(prev, formData) : await uploadResourceImage(prev, formData);
-      } catch {
+      } catch (error) {
+        // A redirect (for example to the login page when the session has ended) is not a failure.
+        const digest = typeof error === "object" && error !== null && "digest" in error ? String((error as { digest: unknown }).digest) : "";
+        if (digest.startsWith("NEXT_REDIRECT")) throw error;
         // The request itself failed (for example a file far over the size limit: Next.js
         // answers before our code runs, or the network dropped). Nothing was stored.
         return { status: "error", message: "The upload could not be completed. The file may be too large (2 MB at most) or the connection failed. Nothing was saved." };

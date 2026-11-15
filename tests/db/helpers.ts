@@ -11,7 +11,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { execSync } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { expect } from '@playwright/test'
@@ -67,6 +67,26 @@ export interface TestOwner {
 
 const createdUserIds: string[] = []
 
+/**
+ * Every test user id is also written to a small file in the temp folder, so the
+ * global teardown knows exactly which Storage folders belong to TEST users even after
+ * the users are deleted. (Nothing else in the bucket is ever deleted by the teardown.)
+ */
+const LEDGER = path.join(tmpdir(), 'slotmate-test-user-ids.txt')
+export function recordTestUserId(id: string): void {
+  appendFileSync(LEDGER, id + '\n')
+}
+function ledgerIds(): string[] {
+  try {
+    return readFileSync(LEDGER, 'utf8').split('\n').filter((l) => /^[0-9a-f-]{36}$/.test(l))
+  } catch {
+    return []
+  }
+}
+export function clearLedger(): void {
+  rmSync(LEDGER, { force: true })
+}
+
 export async function createOwner(): Promise<TestOwner> {
   const service = serviceClient()
   const email = `slotmate-test-${randomUUID()}@example.com`
@@ -81,6 +101,7 @@ export async function createOwner(): Promise<TestOwner> {
     throw new Error(`auth.admin.createUser failed: ${error?.message ?? 'no user returned'}`)
   }
   createdUserIds.push(data.user.id)
+  recordTestUserId(data.user.id)
 
   const client = anonClient()
   const signIn = await client.auth.signInWithPassword({ email, password })
@@ -163,18 +184,19 @@ export async function sweepTestUsers(): Promise<number> {
 }
 
 /**
- * Removes files in the bucket that belong to nobody: top-level folders that are not
- * an existing user's id (files of owners who were deleted) and the t21-* folders of
- * the bucket tests. Real owners' files are never touched. Returns how many were removed.
+ * Removes the bucket files of TEST artifacts only: the folders of test user ids recorded
+ * during this run (see the ledger above; the users themselves are already deleted) and
+ * the t21-* folders of the bucket tests. Folders of anyone else are never touched, even
+ * if their owner no longer exists. Returns how many files were removed.
  */
 export async function removeOrphanBucketFiles(): Promise<number> {
   const storage = serviceClient().storage.from(IMAGE_BUCKET)
-  const userIds = new Set((await allUsers()).map((u) => u.id))
   const top = await storage.list('', { limit: 1000 })
   if (top.error) throw new Error(`storage list failed: ${top.error.message}`)
+  const mine = new Set(ledgerIds())
   let removed = 0
   for (const entry of top.data ?? []) {
-    if (userIds.has(entry.name) && !entry.name.startsWith('t21-')) continue
+    if (!mine.has(entry.name) && !entry.name.startsWith('t21-')) continue
     const files = entry.id ? [entry.name] : await bucketFilesUnder(entry.name)
     if (files.length > 0) {
       await storage.remove(files)
@@ -185,21 +207,21 @@ export async function removeOrphanBucketFiles(): Promise<number> {
 }
 
 /**
- * The permanent "no leftovers" check (read only): counts test users (addresses
- * starting slotmate-test-) and files in the image bucket that belong to nobody
- * or to a test user. Throws, with the COUNTS only, if anything remains.
+ * The permanent "no leftovers" check (read only): counts test users (addresses starting
+ * slotmate-test-) and files in the image bucket that belong to a test user (an existing
+ * one with a test address, or an id recorded in this run's ledger) or sit in a t21-*
+ * folder. Throws, with the COUNTS only, if anything remains. Folders that belong to
+ * nobody we can name as a test artifact are ignored (they are not ours to judge).
  */
 export async function assertNoLeftovers(): Promise<{ testUsers: number; files: number }> {
   const users = await allUsers()
   const testUsers = users.filter((u) => u.email && TEST_EMAIL.test(u.email))
-  const userIds = new Set(users.map((u) => u.id))
-  const testIds = new Set(testUsers.map((u) => u.id))
+  const testIds = new Set([...testUsers.map((u) => u.id), ...ledgerIds()])
   const top = await serviceClient().storage.from(IMAGE_BUCKET).list('', { limit: 1000 })
   if (top.error) throw new Error(`storage list failed: ${top.error.message}`)
   let files = 0
   for (const entry of top.data ?? []) {
-    const orphan = !userIds.has(entry.name) || entry.name.startsWith('t21-')
-    if (!orphan && !testIds.has(entry.name)) continue
+    if (!testIds.has(entry.name) && !entry.name.startsWith('t21-')) continue
     files += entry.id ? 1 : (await bucketFilesUnder(entry.name)).length
   }
   if (testUsers.length > 0 || files > 0) {

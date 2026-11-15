@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { serviceClient } from "../db/helpers";
+import { recordTestUserId, serviceClient } from "../db/helpers";
 
 // Throw-away owners for the UI tests. They are created through the Auth admin
 // API (no email is sent: A20) and their addresses start with "slotmate-test-"
@@ -39,6 +39,7 @@ export async function createTestUser(options: { confirmed?: boolean } = {}): Pro
   if (error || !data.user) {
     throw new Error(`auth.admin.createUser failed: ${error?.message ?? "no user returned"}`);
   }
+  recordTestUserId(data.user.id);
   return { id: data.user.id, email, password };
 }
 

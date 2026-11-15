@@ -83,7 +83,6 @@ export function AvailabilityEditor({
                       value={day.opens}
                       onChange={(e) => set(n, { opens: e.target.value })}
                       disabled={readOnly || !day.open}
-                      inputMode="numeric"
                       autoComplete="off"
                       placeholder="09:00"
                       aria-invalid={opensError ? true : undefined}
@@ -106,7 +105,6 @@ export function AvailabilityEditor({
                       value={day.closes}
                       onChange={(e) => set(n, { closes: e.target.value })}
                       disabled={readOnly || !day.open}
-                      inputMode="numeric"
                       autoComplete="off"
                       placeholder="17:00"
                       aria-invalid={closesError ? true : undefined}

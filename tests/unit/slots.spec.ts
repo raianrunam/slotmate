@@ -39,6 +39,22 @@ test.describe("clock text", () => {
     expect(formatClock(34200)).toBe("09:30");
     expect(formatClock(86400)).toBe("24:00");
   });
+  test("date arithmetic does not depend on the host's time zone (review finding 1)", () => {
+    const before = process.env.TZ;
+    try {
+      for (const hostZone of ["America/New_York", "Australia/Sydney", "Pacific/Kiritimati", "UTC"]) {
+        process.env.TZ = hostZone;
+        expect(addDaysToDate("2026-03-07", 2), hostZone).toBe("2026-03-09");
+        expect(addDaysToDate("2026-10-24", 2), hostZone).toBe("2026-10-26");
+        expect(addDaysToDate("2026-04-04", 1), hostZone).toBe("2026-04-05");
+        expect(addDaysToDate("2026-12-31", 1), hostZone).toBe("2027-01-01");
+        expect(addDaysToDate("2026-03-01", -1), hostZone).toBe("2026-02-28");
+      }
+    } finally {
+      if (before === undefined) delete process.env.TZ;
+      else process.env.TZ = before;
+    }
+  });
   test("dates", () => {
     expect(isoWeekday("2026-11-15")).toBe(7); // a Sunday
     expect(isoWeekday("2026-11-16")).toBe(1); // a Monday

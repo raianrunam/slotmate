@@ -19,24 +19,45 @@ export type SaveImageResult =
   | { ok: false; reason: "storage" }
   | { ok: false; reason: "database"; error: DbError };
 
-// Deletes every file in the resource's folder except the one recorded path
-// (or all of them when keepPath is null). Best effort: returns false if Storage
-// failed, but never throws. This also removes orphans left by a concurrent
-// upload or a failed earlier removal (review findings 4, 5 and 7 of Phase 9).
+// A file younger than this might belong to an upload that is still in progress
+// (uploaded, but its path not recorded yet). The sweep leaves such files alone, so
+// two near-simultaneous uploads cannot delete each other's file (Phase 10 review
+// finding 2). The PREVIOUS recorded image is the exception: it is deleted at once.
+const YOUNG_FILE_MS = 60_000;
+
+// Deletes files in the resource's folder, except: the one recorded path (re-read from
+// the database, so a path recorded by another request meanwhile is kept too), the
+// caller's own new file, and files younger than a minute (unless they are the previous
+// image). With keepPath === null everything old enough goes. Best effort: returns
+// false if Storage failed, but never throws. Strays that are skipped now are removed
+// by a later sweep or by the delete of the resource (removeResourceFiles takes them all).
 async function sweepFolder(
   admin: ReturnType<typeof createAdminClient>,
   ownerId: string,
   resourceId: string,
   keepPath: string | null,
+  previousPath: string | null = null,
 ): Promise<boolean> {
   try {
     const folder = imageFolder(ownerId, resourceId);
-    const listed = await admin.storage.from(BUCKET).list(folder, { limit: 100 });
-    if (listed.error) return false;
+    const [listed, current] = await Promise.all([
+      admin.storage.from(BUCKET).list(folder, { limit: 100 }),
+      admin.from("resources").select("image_path").eq("id", resourceId).maybeSingle(),
+    ]);
+    if (listed.error || current.error) return false;
+    const recorded = current.data?.image_path ?? null;
+    const previous = previousPath && previousPath.startsWith(`${folder}/`) && !previousPath.includes("..") ? previousPath : null;
+    const now = Date.now();
     const doomed = (listed.data ?? [])
       .filter((f) => f.name)
-      .map((f) => `${folder}/${f.name}`)
-      .filter((path) => path !== keepPath);
+      .filter((f) => {
+        const path = `${folder}/${f.name}`;
+        if (path === keepPath || path === recorded) return false; // never the live image
+        if (path === previous) return true; // the image this request replaced
+        const created = f.created_at ? Date.parse(f.created_at) : Number.NaN;
+        return Number.isNaN(created) || now - created > YOUNG_FILE_MS; // old strays only
+      })
+      .map((f) => `${folder}/${f.name}`);
     if (doomed.length === 0) return true;
     const removed = await admin.storage.from(BUCKET).remove(doomed);
     return !removed.error;
@@ -89,7 +110,7 @@ export async function saveResourceImage(args: {
   // the previous image, and any orphan left by a concurrent upload. Best effort:
   // if it fails the owner still has the right image and the extra files are only
   // wasted space (they are removed by the next sweep or by the delete).
-  if (!(await sweepFolder(admin, args.ownerId, args.resourceId, path))) {
+  if (!(await sweepFolder(admin, args.ownerId, args.resourceId, path, args.previousPath))) {
     console.error("image folder sweep failed");
   }
   return { ok: true };
@@ -113,7 +134,7 @@ export async function removeResourceImage(args: {
     console.error("set_resource_image (remove) failed", { code: record.error.code });
     return { ok: false, reason: "database", error: record.error };
   }
-  if (!(await sweepFolder(admin, args.ownerId, args.resourceId, null))) {
+  if (!(await sweepFolder(admin, args.ownerId, args.resourceId, null, args.previousPath))) {
     console.error("image folder sweep failed");
   }
   return { ok: true };
@@ -121,8 +142,12 @@ export async function removeResourceImage(args: {
 
 /** After a successful row delete: a best-effort second sweep (catches a file uploaded during the delete). */
 export async function sweepResourceFilesAfterDelete(ownerId: string, resourceIds: readonly string[]): Promise<void> {
-  const admin = createAdminClient();
-  for (const resourceId of resourceIds) await sweepFolder(admin, ownerId, resourceId, null);
+  // Everything goes, young files included: the resource row is already deleted.
+  try {
+    await removeResourceFiles(ownerId, resourceIds);
+  } catch {
+    // best effort
+  }
 }
 
 /**

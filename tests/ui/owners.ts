@@ -22,7 +22,13 @@ export async function newOwner(): Promise<TestOwner> {
   const user = await createTestUser({ confirmed: true });
   createdIds.push(user.id);
   const client = anonClient();
-  const signIn = await client.auth.signInWithPassword({ email: user.email, password: user.password });
+  // Supabase limits password sign-ins; a short retry rides out a brief burst. If the limit is
+  // really exhausted (many tests in a row), wait a few minutes and run again.
+  let signIn = await client.auth.signInWithPassword({ email: user.email, password: user.password });
+  for (let attempt = 0; attempt < 3 && signIn.error && /rate limit/i.test(signIn.error.message); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 8_000));
+    signIn = await client.auth.signInWithPassword({ email: user.email, password: user.password });
+  }
   if (signIn.error) throw new Error(`owner sign-in failed: ${signIn.error.message}`);
   return { ...user, client };
 }

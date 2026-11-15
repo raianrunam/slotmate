@@ -24,10 +24,23 @@ async function storedHours(resourceId: string) {
   return data;
 }
 
-async function setup(page: Page, zone = ZONE) {
-  const owner = await newOwner();
-  const workspaceId = await addWorkspace(owner, "Studio", `ws-${tag()}`, zone);
-  const resourceId = await addResource(owner, workspaceId, "Room 1"); // 30-minute slots
+// To stay under Supabase's sign-in rate limit, the tests that do not depend on the number of
+// workspaces or resources share ONE Pro owner per Playwright worker (made on first use); each
+// test still gets its OWN new resource, so tests cannot see each other's hours.
+let shared: Promise<{ owner: TestOwner; workspaceId: string }> | null = null;
+function sharedOwner() {
+  shared ??= (async () => {
+    const owner = await newOwner();
+    await setPlan(owner.id, "pro");
+    const workspaceId = await addWorkspace(owner, "Studio", `ws-${tag()}`, ZONE);
+    return { owner, workspaceId };
+  })();
+  return shared;
+}
+
+async function setup(page: Page) {
+  const { owner, workspaceId } = await sharedOwner();
+  const resourceId = await addResource(owner, workspaceId, `Room ${tag()}`); // 30-minute slots
   await logIn(page, owner);
   return { owner, workspaceId, resourceId };
 }
@@ -212,10 +225,17 @@ test.describe("locked resources (after a downgrade)", () => {
   });
 });
 
+let victimOwner: Promise<{ other: TestOwner; ws: string }> | null = null;
+
 test.describe("another owner's resource (the server refuses)", () => {
   async function victim() {
-    const other: TestOwner = await newOwner();
-    const ws = await addWorkspace(other, "Victim ws", `ws-${tag()}`, ZONE);
+    // A separate Pro owner per worker, made on first use.
+    victimOwner ??= (async () => {
+      const other: TestOwner = await newOwner();
+      await setPlan(other.id, "pro");
+      return { other, ws: await addWorkspace(other, "Victim ws", `ws-${tag()}`, ZONE) };
+    })();
+    const { other, ws } = await victimOwner;
     const id = await addResource(other, ws, "Victim room");
     await other.client.from("resource_availability").insert([{ resource_id: id, weekday: 1, opens_at: "09:00", closes_at: "17:00" }]);
     return { other, id };
@@ -245,7 +265,11 @@ test.describe("another owner's resource (the server refuses)", () => {
 
 test.describe("navigation", () => {
   test("the nav's Availability page lists resources and links to each editor; the resource page links to its hours", async ({ page }) => {
-    const { owner, resourceId } = await setup(page);
+    // A fresh owner: this test looks at the whole list of resources.
+    const owner = await newOwner();
+    const workspaceId = await addWorkspace(owner, "Studio", `ws-${tag()}`, ZONE);
+    const resourceId = await addResource(owner, workspaceId, "Room 1");
+    await logIn(page, owner);
     await owner.client.from("resource_availability").insert([
       { resource_id: resourceId, weekday: 1, opens_at: "09:00", closes_at: "17:00" },
       { resource_id: resourceId, weekday: 2, opens_at: "10:00", closes_at: "24:00" },

@@ -28,7 +28,9 @@ import { bookingArgs, createOwner, deleteCreatedOwners, readOnlySql, serviceClie
 // a clock change to fall inside the next 90 days. Slots that are accepted are really
 // inserted (a Pro test owner, so the monthly limit is not reached) and deleted after.
 
-const ZONES = ['Europe/London', 'America/New_York', 'Australia/Sydney', 'Asia/Dhaka'] as const
+// Pacific/Kiritimati (+14) and Pacific/Pago_Pago (-11) sit at the far ends of the clock: a weekday or a
+// 90-day limit taken from the UTC date instead of the workspace's own date would be wrong there.
+const ZONES = ['Europe/London', 'America/New_York', 'Australia/Sydney', 'Pacific/Kiritimati', 'Pacific/Pago_Pago'] as const
 const SLOT_LENGTHS = [30, 45, 60, 90] as const
 
 // Clock-change dates of 2026 (all 24-hour days in the past of "now", 2026-11-15 or later).
@@ -36,10 +38,17 @@ const CHANGE_DATES: Record<(typeof ZONES)[number], string[]> = {
   'Europe/London': ['2026-03-29', '2026-10-25'],
   'America/New_York': ['2026-03-08', '2026-11-01'],
   'Australia/Sydney': ['2026-04-05', '2026-10-04'],
-  'Asia/Dhaka': ['2026-03-29', '2026-10-25'], // no clock changes here: control dates
+  'Pacific/Kiritimati': ['2026-03-29', '2026-10-25'], // no clock changes here: control dates
+  'Pacific/Pago_Pago': ['2026-03-29', '2026-10-25'], // no clock changes here: control dates
 }
 
-const WINDOWS: AvailabilityWindow[] = [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({ weekday, opensAt: '00:30', closesAt: '24:00' }))
+// A DIFFERENT window on different weekdays, so a wrong weekday (for example from the UTC date) changes the answer:
+// odd weekdays open 00:30, even ones 01:00; every third weekday closes 22:30, the others 24:00.
+const WINDOWS: AvailabilityWindow[] = [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({
+  weekday,
+  opensAt: weekday % 2 === 1 ? '00:30' : '01:00',
+  closesAt: weekday % 3 === 0 ? '22:30' : '24:00',
+}))
 
 interface Case {
   zone: (typeof ZONES)[number]
@@ -160,6 +169,7 @@ test.describe('T10 app slot rules agree with submit_booking', () => {
     const sixty = cases.filter((c) => c.slot === 60)
     let accepted = 0
     for (const c of sixty) {
+      const tried = new Set<number>() // the windows of neighbouring days overlap: never book one instant twice
       const today = todayInZone(c.zone)
       // Yesterday (past), a few days ahead (accepted), exactly 90 days ahead (accepted), 91 days (too_far).
       for (const offset of [-1, 3, 90, 91]) {
@@ -167,7 +177,13 @@ test.describe('T10 app slot rules agree with submit_booking', () => {
         const midnight = firstInstantForWall(Date.parse(`${date}T00:00:00Z`), c.zone)!
         const starts: Date[] = []
         for (let t = midnight + 6 * 3600_000; t < midnight + 11 * 3600_000; t += 15 * 60_000) starts.push(new Date(t))
-        const results = await inBatches(starts, 10, (t) => compare(c, t))
+        // ...and 3 hours either side of local midnight (the 90-day limit and the weekday change there).
+        for (let t = midnight - 3 * 3600_000; t < midnight + 3 * 3600_000; t += 15 * 60_000) starts.push(new Date(t))
+        // ...and the evening, where the 22:30 closing time of every third weekday matters.
+        for (let t = midnight + 20 * 3600_000; t < midnight + 24 * 3600_000; t += 15 * 60_000) starts.push(new Date(t))
+        const fresh = starts.filter((t) => !tried.has(t.getTime()))
+        fresh.forEach((t) => tried.add(t.getTime()))
+        const results = await inBatches(fresh, 10, (t) => compare(c, t))
         expect(results.filter((r) => r.problem).map((r) => r.problem), `${c.zone} day ${offset}`).toEqual([])
         accepted += results.filter((r) => r.accepted).length
       }
@@ -234,6 +250,56 @@ test.describe('T10 app slot rules agree with submit_booking', () => {
     // The probes really cover all three situations.
     const kinds = new Set(probes.map((p) => instantsForWall(Date.parse(p.wall.replace(' ', 'T') + 'Z'), p.zone).length))
     expect([...kinds].sort()).toEqual([0, 1, 2])
+  })
+
+  // The dates of clock changes are in the past, so submit_booking answers "past" before it
+  // would return an end, and ends_at cannot be compared through bookings. Instead this runs
+  // a COPY of the function's step 5 (the end of the slot, with the move to the first copy of
+  // a repeated hour; supabase/migrations/20261114153115_functions.sql, "Step 5") as a
+  // read-only query, for every 15-minute wall start of each clock-change day and every slot
+  // length, and compares it with the app's endInstantForWall. If the function's end logic is
+  // ever changed, this query copy must be changed with it (a limit of this test: it checks a
+  // copy of the logic, not the function itself).
+  test('slot ends on clock-change days: the app equals the database end logic (read-only SQL copy of step 5)', async () => {
+    const rows: { zone: string; wall: number; slot: number }[] = []
+    for (const zone of ZONES) {
+      for (const date of CHANGE_DATES[zone]) {
+        const midnight = Date.parse(`${date}T00:00:00Z`)
+        for (const slot of SLOT_LENGTHS) {
+          for (let m = 0; m < 24 * 60; m += 15) rows.push({ zone, wall: midnight + m * 60_000, slot })
+        }
+      }
+    }
+    const values = rows
+      .map((r, i) => `(${i}, '${r.zone}', timestamp '${new Date(r.wall).toISOString().slice(0, 19).replace('T', ' ')}', ${r.slot})`)
+      .join(',')
+    const sql = `
+      with p(i, tz, ls, mins) as (values ${values}),
+      a as (select i, tz, ls + pg_catalog.make_interval(mins => mins) as le,
+                   (ls + pg_catalog.make_interval(mins => mins)) at time zone tz as e from p),
+      b as (select i, tz, le, e,
+                   (e at time zone tz) - (e at time zone 'UTC') as off_end,
+                   ((e - interval '24 hours') at time zone tz) - ((e - interval '24 hours') at time zone 'UTC') as off_prev from a)
+      select i, extract(epoch from case
+               when off_prev > off_end and ((e - (off_prev - off_end)) at time zone tz) = le then e - (off_prev - off_end)
+               else e end)::bigint as epoch
+      from b order by i`
+    const out = readOnlySql(sql)
+    expect(out).toHaveLength(rows.length)
+    const wrong: string[] = []
+    for (const row of out) {
+      const r = rows[Number(row.i)]
+      const app = endInstantForWall(r.wall + r.slot * 60_000, r.zone)
+      if (Number(row.epoch) * 1000 !== app) {
+        wrong.push(`${r.zone} ${new Date(r.wall).toISOString()} +${r.slot}: function ${new Date(Number(row.epoch) * 1000).toISOString()} vs app ${new Date(app).toISOString()}`)
+      }
+    }
+    expect(wrong.slice(0, 5), `${wrong.length} of ${rows.length} ends differ`).toEqual([])
+    // Not vacuous: the rows include ends inside a repeated hour and inside a skipped hour.
+    const inRepeated = rows.filter((r) => instantsForWall(r.wall + r.slot * 60_000, r.zone).length === 2).length
+    const inSkipped = rows.filter((r) => instantsForWall(r.wall + r.slot * 60_000, r.zone).length === 0).length
+    expect(inRepeated, 'ends inside a repeated hour were compared').toBeGreaterThan(10)
+    expect(inSkipped, 'ends inside a skipped hour were compared').toBeGreaterThan(10)
   })
 
   test('a start in the near past and a start exactly on a slot but outside the opening hours are refused like the app says', async () => {
