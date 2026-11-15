@@ -44,7 +44,9 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="flex min-h-full flex-col">
+      {/* suppressHydrationWarning on <body> only: browser extensions (for example
+          Grammarly) add attributes to <body> before React loads. Not an app bug. */}
+      <body className="flex min-h-full flex-col" suppressHydrationWarning>
         <a
           href="#main-content"
           className="sr-only rounded-md bg-primary text-sm font-medium text-primary-foreground focus-visible:not-sr-only focus-visible:fixed focus-visible:top-3 focus-visible:left-3 focus-visible:z-[100] focus-visible:px-4 focus-visible:py-2"
