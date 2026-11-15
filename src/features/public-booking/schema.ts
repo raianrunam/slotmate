@@ -116,7 +116,10 @@ export type BookingErrorKind =
 // What the Server Action returns to the form (a success redirects instead).
 export type BookingFormState =
   | { status: "idle" }
-  | { status: "error"; kind: BookingErrorKind | "fields"; message?: string; fieldErrors?: FieldErrors };
+  | { status: "error"; kind: BookingErrorKind | "fields"; message?: string; fieldErrors?: FieldErrors }
+  // Only for the widget (embed mode): inside an iframe the status page cannot open (it is never
+  // framed, A8), so the action returns its address and the widget opens it in a new tab.
+  | { status: "submitted"; statusPath: string };
 
 export const initialBookingState: BookingFormState = { status: "idle" };
 

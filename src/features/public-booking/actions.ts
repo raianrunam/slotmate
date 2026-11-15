@@ -105,6 +105,10 @@ export async function submitBooking(formData: FormData): Promise<BookingFormStat
     return fail("unknown");
   }
 
+  // Widget mode: the status page cannot be shown inside the iframe (it is never framed, A8), so
+  // return its address; the widget shows it as a link that opens in a new tab.
+  if (formData.get("embed") === "1") return { status: "submitted", statusPath: `/booking/${code}?submitted=1` };
+
   // Step 7. "submitted=1" only makes the page show the success message and the link once.
   redirect(`/booking/${code}?submitted=1`);
 }

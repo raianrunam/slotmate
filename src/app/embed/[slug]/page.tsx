@@ -1,62 +1,94 @@
+import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { LogoMark } from "@/components/logo";
-import { PlaceholderNotice } from "@/components/placeholder-notice";
 import { TableSkeleton } from "@/components/loading-skeletons";
+import { LogoMark } from "@/components/logo";
+import { EmbedTheme } from "@/features/embed/components/embed-theme";
+import { readableTextColor } from "@/features/embed/schema";
+import { BookingFlow } from "@/features/public-booking/components/booking-flow";
+import { getPublicWorkspace } from "@/features/public-booking/queries";
+import { SLUG } from "@/features/public-booking/schema";
+import { minutesLabel } from "@/features/resources/schema";
+import { zoneLabel } from "@/lib/time/format";
+import { addDaysToDate, MAX_DAYS_AHEAD, todayInZone } from "@/lib/time/slots";
+import { cn } from "@/lib/utils";
 
-const RESOURCES = [
-  { id: "room", name: "Meeting room", detail: "60 minutes · up to 8 people" },
-  { id: "desk", name: "Desk 4", detail: "30 minutes · 1 person" },
-] as const;
-
-// The widget shell. The theme follows the viewer's light or dark setting here;
-// in Phase 14 the owner's saved theme (EMBED-04) decides.
-async function WidgetShell({ params }: { params: Promise<{ slug: string }> }) {
+// The widget (EMBED-01 to EMBED-07): the public booking flow with minimal chrome, shown
+// inside another website's iframe. Same rules as /book/<slug>: only the fields a visitor may
+// see (ISO-02), the same rate limit inside the booking action, an unknown or locked workspace
+// shows the same "not found" page. The options come from the public-read module, which has
+// already dropped the Pro-only values for an owner who is not Pro (EMBED-05).
+async function Widget({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
+  if (!SLUG.test(slug) || slug.length < 3 || slug.length > 40) notFound();
+  const workspace = await getPublicWorkspace(slug, { embed: true });
+  if (!workspace || !workspace.embed) notFound();
+  const { theme, layout, backgroundColor } = workspace.embed;
+
+  const today = todayInZone(workspace.timeZone);
+  const label = zoneLabel(workspace.timeZone);
+
+  // backgroundColor is either null or an exact #rrggbb (validated when read), so it can be a style value.
+  const style = backgroundColor ? { backgroundColor, color: readableTextColor(backgroundColor) } : undefined;
 
   return (
-    <div className="grid gap-4">
-      <div>
-        <h1 className="font-heading text-xl font-semibold tracking-tight">Book a time</h1>
-        <p className="text-sm text-muted-foreground">
-          Workspace address: <code className="font-mono">{slug}</code>
-        </p>
+    <div
+      className={cn("rounded-lg p-4 text-sm", theme === "dark" ? "dark bg-background text-foreground" : "bg-background text-foreground")}
+      style={style}
+      data-testid="embed-root"
+      data-theme={theme}
+      data-layout={layout}
+    >
+      <EmbedTheme theme={theme} />
+      <div className="grid gap-5">
+        <div>
+          <h1 className="font-heading text-xl font-semibold tracking-tight [overflow-wrap:anywhere]">{workspace.name}</h1>
+          {workspace.description ? <p className="mt-1 text-sm opacity-80 [overflow-wrap:anywhere]">{workspace.description}</p> : null}
+          <p className="mt-1 text-xs opacity-80" data-testid="zone-note">
+            Times are shown in {label}.
+          </p>
+        </div>
+
+        {workspace.resources.length === 0 ? (
+          <p className="rounded-lg border border-border p-3" data-testid="no-resources">
+            Nothing can be booked here right now. Please check back later.
+          </p>
+        ) : !workspace.acceptingRequests ? (
+          <p role="status" className="rounded-lg border border-border p-3" data-testid="not-accepting">
+            This workspace is not accepting booking requests right now. Please try again later.
+          </p>
+        ) : (
+          <BookingFlow
+            embed={{ layout }}
+            resources={workspace.resources.map((r) => ({
+              id: r.id,
+              name: r.name,
+              description: r.description,
+              imageUrl: r.imageUrl,
+              capacity: r.capacity,
+              slotMinutes: r.slotMinutes,
+              facts: `${minutesLabel(r.slotMinutes)} per booking · up to ${r.capacity} ${r.capacity === 1 ? "person" : "people"}`,
+            }))}
+            zoneLabel={label}
+            minDate={today}
+            maxDate={addDaysToDate(today, MAX_DAYS_AHEAD)}
+          />
+        )}
       </div>
-      <PlaceholderNotice phase="Phase 14">
-        This is a sketch of the widget. Nothing here can be booked yet.
-      </PlaceholderNotice>
-      <ul className="grid gap-3">
-        {RESOURCES.map((resource) => (
-          <li key={resource.id}>
-            <Card>
-              <CardHeader className="gap-1">
-                <CardTitle>{resource.name}</CardTitle>
-                <CardDescription>{resource.detail}</CardDescription>
-              </CardHeader>
-              <div className="px-4 pb-4">
-                <Button className="h-11 w-full sm:h-9 sm:w-fit" disabled>
-                  Choose a time
-                </Button>
-              </div>
-            </Card>
-          </li>
-        ))}
-      </ul>
+      <p className="mt-5 flex items-center justify-center gap-2 text-xs opacity-70">
+        <LogoMark className="size-4" />
+        Powered by SlotMate
+      </p>
     </div>
   );
 }
 
+// With Cache Components the data may only be read inside <Suspense> (same as /book/<slug>).
 export default function EmbedPage({ params }: { params: Promise<{ slug: string }> }) {
   return (
-    <main id="main-content" className="mx-auto w-full max-w-xl flex-1 px-4 py-5">
+    <main id="main-content" className="mx-auto w-full max-w-3xl flex-1 p-2">
       <Suspense fallback={<TableSkeleton rows={2} />}>
-        <WidgetShell params={params} />
+        <Widget params={params} />
       </Suspense>
-      <p className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-        <LogoMark className="size-4" />
-        Powered by SlotMate
-      </p>
     </main>
   );
 }

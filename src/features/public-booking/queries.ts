@@ -13,6 +13,7 @@ import {
   type AvailabilityWindow,
 } from "@/lib/time/slots";
 import { DATE, STATUS_CODE, type DaySlotsResult } from "@/features/public-booking/schema";
+import { effectiveEmbedOptions, normalizeEmbedOptions, type EmbedOptions } from "@/features/embed/schema";
 import type { Database } from "@/types/database.types";
 
 // Server-only reads for the public pages (A4 place 1: "public reads"). They use
@@ -43,6 +44,8 @@ export interface PublicWorkspace {
   resources: PublicResource[];
   /** False when the owner's monthly limit is reached (D19, PUB-06): the page shows no form. */
   acceptingRequests: boolean;
+  /** Only when asked for (the widget): the options that really apply, Pro values already dropped for a non-Pro owner (EMBED-05). */
+  embed?: EmbedOptions;
 }
 
 /** The public address of a stored image (the bucket is public, S1). */
@@ -57,7 +60,7 @@ function firstOfUtcMonth(now: Date): string {
 }
 
 /** PUB-01, PUB-02, BILL-09: null when the slug is unknown or the workspace is locked. */
-export async function getPublicWorkspace(slug: string): Promise<PublicWorkspace | null> {
+export async function getPublicWorkspace(slug: string, options: { embed?: boolean } = {}): Promise<PublicWorkspace | null> {
   await connection();
   const admin = createAdminClient();
 
@@ -88,14 +91,18 @@ export async function getPublicWorkspace(slug: string): Promise<PublicWorkspace 
 
   // D19: the month's count against the plan's limit. The database re-checks inside submit_booking.
   let acceptingRequests = true;
-  if ((resources.data ?? []).length > 0) {
+  let ownerPlan: "free" | "pro" = "free";
+  if ((resources.data ?? []).length > 0 || options.embed) {
     const plan = await admin.rpc("current_plan", { p_owner_id: ownerId });
     if (plan.error || !plan.data) {
       console.error("current_plan failed", { code: plan.error?.code ?? null });
       throw new Error("Could not load this page.");
     }
+    ownerPlan = plan.data === "pro" ? "pro" : "free";
+  }
+  if ((resources.data ?? []).length > 0) {
     const [limit, usage] = await Promise.all([
-      admin.from("plan_limits").select("max_monthly_bookings").eq("plan", plan.data).maybeSingle(),
+      admin.from("plan_limits").select("max_monthly_bookings").eq("plan", ownerPlan).maybeSingle(),
       admin.from("monthly_usage").select("booking_count").eq("owner_id", ownerId).eq("month", firstOfUtcMonth(new Date())).maybeSingle(),
     ]);
     if (limit.error || usage.error || !limit.data) {
@@ -105,11 +112,28 @@ export async function getPublicWorkspace(slug: string): Promise<PublicWorkspace 
     acceptingRequests = (usage.data?.booking_count ?? 0) < limit.data.max_monthly_bookings;
   }
 
+  // The widget's options (EMBED-03 to EMBED-05): only theme, layout and colour are read, and
+  // what the owner's plan does not allow is dropped here, before the page ever sees it.
+  let embed: EmbedOptions | undefined;
+  if (options.embed) {
+    const config = await admin
+      .from("embed_configurations")
+      .select("theme, layout, background_color")
+      .eq("workspace_id", id)
+      .maybeSingle();
+    if (config.error) {
+      console.error("embed options lookup failed", { code: config.error.code });
+      throw new Error("Could not load this page.");
+    }
+    embed = effectiveEmbedOptions(normalizeEmbedOptions(config.data), ownerPlan);
+  }
+
   return {
     name: workspace.data.name,
     description: workspace.data.description,
     timeZone: workspace.data.time_zone,
     acceptingRequests,
+    ...(embed ? { embed } : {}),
     resources: (resources.data ?? []).map((r) => ({
       id: r.id,
       name: r.name,
