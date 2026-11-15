@@ -9,7 +9,8 @@ export const metadata: Metadata = {
 };
 
 // The owner area frame: sidebar on desktop (1024 px and wider), header with a
-// menu button below that. No data and no login check yet (Phases 7 onwards).
+// menu button below that. The login check is NOT here: a layout is not re-run on
+// every navigation, so each page wraps its content in <OwnerGate> (Phase 7).
 export default function DashboardLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {

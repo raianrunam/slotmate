@@ -4,6 +4,7 @@ import { LockIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { OwnerGate } from "@/components/owner-gate";
 import { PageHeader } from "@/components/page-header";
 import { PlaceholderNotice } from "@/components/placeholder-notice";
 
@@ -50,7 +51,7 @@ function LockedCard({ title, description }: { title: string; description: string
   );
 }
 
-export default function AnalyticsPage() {
+function AnalyticsContent() {
   return (
     <>
       <PageHeader
@@ -83,5 +84,14 @@ export default function AnalyticsPage() {
         <LockedCard title="Resource usage" description="Which resources get the most requests, with date filters." />
       </div>
     </>
+  );
+}
+
+// Every dashboard page checks the owner first (A3 layer 2). A unit test enforces this.
+export default function AnalyticsPage() {
+  return (
+    <OwnerGate>
+      <AnalyticsContent />
+    </OwnerGate>
   );
 }

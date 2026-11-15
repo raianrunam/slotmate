@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { OwnerGate } from "@/components/owner-gate";
 import { PageHeader } from "@/components/page-header";
 import { PlaceholderNotice } from "@/components/placeholder-notice";
 import { PlanCard } from "@/components/plan-card";
@@ -15,7 +16,7 @@ const USAGE = [
   { label: "Requests this month", used: 12, max: PLANS.free.limits.maxMonthlyBookings },
 ] as const;
 
-export default function BillingPage() {
+function BillingContent() {
   return (
     <>
       <PageHeader
@@ -72,5 +73,14 @@ export default function BillingPage() {
         />
       </div>
     </>
+  );
+}
+
+// Every dashboard page checks the owner first (A3 layer 2). A unit test enforces this.
+export default function BillingPage() {
+  return (
+    <OwnerGate>
+      <BillingContent />
+    </OwnerGate>
   );
 }

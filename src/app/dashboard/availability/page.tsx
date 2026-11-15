@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { OwnerGate } from "@/components/owner-gate";
 import { PageHeader } from "@/components/page-header";
 import { PlaceholderNotice } from "@/components/placeholder-notice";
 
@@ -19,7 +20,7 @@ const DAYS = [
   { n: 7, name: "Sunday", open: false },
 ] as const;
 
-export default function AvailabilityPage() {
+function AvailabilityContent() {
   return (
     <>
       <PageHeader
@@ -65,5 +66,14 @@ export default function AvailabilityPage() {
         </CardContent>
       </Card>
     </>
+  );
+}
+
+// Every dashboard page checks the owner first (A3 layer 2). A unit test enforces this.
+export default function AvailabilityPage() {
+  return (
+    <OwnerGate>
+      <AvailabilityContent />
+    </OwnerGate>
   );
 }

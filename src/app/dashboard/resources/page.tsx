@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/empty-state";
+import { OwnerGate } from "@/components/owner-gate";
 import { PageHeader } from "@/components/page-header";
 import { PlaceholderNotice } from "@/components/placeholder-notice";
 
@@ -16,7 +17,7 @@ const SAMPLES = [
   { id: "projector", name: "Projector", detail: "120-minute slots · 1 person", on: false },
 ] as const;
 
-export default function ResourcesPage() {
+function ResourcesContent() {
   return (
     <>
       <PageHeader
@@ -58,5 +59,14 @@ export default function ResourcesPage() {
         description="Add a resource, then set when it can be booked. This is how the list looks when it is empty."
       />
     </>
+  );
+}
+
+// Every dashboard page checks the owner first (A3 layer 2). A unit test enforces this.
+export default function ResourcesPage() {
+  return (
+    <OwnerGate>
+      <ResourcesContent />
+    </OwnerGate>
   );
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { OwnerGate } from "@/components/owner-gate";
 import { PageHeader } from "@/components/page-header";
 import { PlaceholderNotice } from "@/components/placeholder-notice";
 import { StatusBadge, type BookingStatus } from "@/components/status-badge";
@@ -21,7 +22,7 @@ const ACTIVITY: readonly { who: string; what: string; status: BookingStatus }[] 
   { who: "Sample visitor D", what: "Desk 4, Fri 11:00", status: "cancelled" },
 ];
 
-export default function DashboardOverviewPage() {
+function DashboardOverviewContent() {
   return (
     <>
       <PageHeader title="Overview" description="A summary of your workspaces and booking requests." />
@@ -63,5 +64,14 @@ export default function DashboardOverviewPage() {
         </Card>
       </section>
     </>
+  );
+}
+
+// Every dashboard page checks the owner first (A3 layer 2). A unit test enforces this.
+export default function DashboardOverviewPage() {
+  return (
+    <OwnerGate>
+      <DashboardOverviewContent />
+    </OwnerGate>
   );
 }

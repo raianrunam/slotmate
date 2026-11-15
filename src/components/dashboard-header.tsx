@@ -2,7 +2,8 @@ import { DashboardMobileNav } from "@/components/dashboard-mobile-nav";
 import { Logo } from "@/components/logo";
 import { NotificationBadge } from "@/components/notification-badge";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { UserMenu } from "@/components/user-menu";
+import { Suspense } from "react";
+import { OwnerUserMenu } from "@/components/owner-user-menu";
 
 // The top bar of the dashboard: the menu button (phones and tablets), the
 // logo (when the sidebar is hidden), the notification badge, the theme toggle
@@ -19,7 +20,10 @@ export function DashboardHeader() {
       <div className="flex items-center gap-1 sm:gap-2">
         <NotificationBadge />
         <ThemeToggle />
-        <UserMenu />
+        {/* Reads the login cookie, so it sits inside <Suspense> (Cache Components). */}
+        <Suspense fallback={<div className="size-10 md:size-8" aria-hidden="true" />}>
+          <OwnerUserMenu />
+        </Suspense>
       </div>
     </header>
   );

@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
+import { OwnerGate } from "@/components/owner-gate";
 import { PageHeader } from "@/components/page-header";
 import { PlaceholderNotice } from "@/components/placeholder-notice";
 
 export const metadata: Metadata = { title: "Workspaces" };
 
-export default function WorkspacesPage() {
+function WorkspacesContent() {
   return (
     <>
       <PageHeader
@@ -58,5 +59,14 @@ export default function WorkspacesPage() {
         }
       />
     </>
+  );
+}
+
+// Every dashboard page checks the owner first (A3 layer 2). A unit test enforces this.
+export default function WorkspacesPage() {
+  return (
+    <OwnerGate>
+      <WorkspacesContent />
+    </OwnerGate>
   );
 }

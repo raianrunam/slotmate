@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { OwnerGate } from "@/components/owner-gate";
 import { PageHeader } from "@/components/page-header";
 import { Pagination, PAGE_SIZE } from "@/components/pagination";
 import { PlaceholderNotice } from "@/components/placeholder-notice";
@@ -82,7 +83,7 @@ async function BookingsTable({
   );
 }
 
-export default function BookingsPage({
+function BookingsContent({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -136,5 +137,18 @@ export default function BookingsPage({
         <BookingsTable searchParams={searchParams} />
       </Suspense>
     </>
+  );
+}
+
+// Every dashboard page checks the owner first (A3 layer 2). A unit test enforces this.
+export default function BookingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  return (
+    <OwnerGate>
+      <BookingsContent searchParams={searchParams} />
+    </OwnerGate>
   );
 }
