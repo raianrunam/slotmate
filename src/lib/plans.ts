@@ -96,6 +96,11 @@ export function effectivePlan(
   return "free";
 }
 
+/** "2 of 3 resources" (usage counts the whole account, D2). */
+export function resourceUsageLabel(used: number, max: number): string {
+  return `${used} of ${max} resources`;
+}
+
 /** "1 of 1 workspaces", "0 of 5 workspaces". */
 export function workspaceUsageLabel(used: number, max: number): string {
   return `${used} of ${max} workspaces`;

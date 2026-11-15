@@ -33,7 +33,7 @@ export function DeleteWorkspaceButton({ id, name }: { id: string; name: string }
           </Button>
         }
         title={`Delete "${name}"?`}
-        description="This permanently deletes the workspace together with all its resources, availability, booking requests and widget settings. This cannot be undone."
+        description="This permanently deletes the workspace together with all its resources and their images, availability, booking requests and widget settings. This cannot be undone."
         confirmLabel="Delete workspace"
         onConfirm={() => formRef.current?.requestSubmit()}
       />

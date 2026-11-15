@@ -7,6 +7,7 @@ import { requireOwner } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { fieldErrorsFrom, readFields } from "@/features/auth/schema";
 import { FRIENDLY, mapWorkspaceError, withDeadlockRetry } from "@/features/workspaces/db-errors";
+import { removeResourceFiles } from "@/features/resources/images";
 import { getWorkspaceUsage } from "@/features/workspaces/queries";
 import { MESSAGES, workspaceIdSchema, workspaceSchema } from "@/features/workspaces/schema";
 import type { WorkspaceFormState } from "@/features/workspaces/state";
@@ -112,12 +113,29 @@ export async function deleteWorkspace(
   _prev: WorkspaceFormState,
   formData: FormData,
 ): Promise<WorkspaceFormState> {
-  await requireOwner();
+  const owner = await requireOwner();
 
   const id = workspaceIdSchema.safeParse(readFields(formData, ["id"]).id);
   if (!id.success) return { status: "error", message: MESSAGES.id };
 
   const supabase = await createClient();
+
+  // DB15: delete the stored images of every resource in this workspace BEFORE the
+  // workspace (the cascade does not touch Storage). The list is read with the
+  // owner's own session, so it only ever holds this owner's resources. If
+  // Storage fails, stop: nothing is deleted.
+  const inside = await supabase.from("resources").select("id").eq("workspace_id", id.data);
+  if (inside.error) {
+    logFailure("deleteWorkspace", inside.error);
+    return failure(mapWorkspaceError(inside.error));
+  }
+  if (!(await removeResourceFiles(owner.id, (inside.data ?? []).map((r) => r.id)))) {
+    return {
+      status: "error",
+      message: "We could not delete the image files of this workspace's resources, so nothing was deleted. Please try again.",
+    };
+  }
+
   const result = await withDeadlockRetry(() =>
     supabase.from("workspaces").delete().eq("id", id.data).select("id"),
   );
@@ -130,8 +148,6 @@ export async function deleteWorkspace(
     return { status: "error", message: FRIENDLY.notAllowed };
   }
 
-  // Phase 9 note (DB15): once resources have images, delete the images from
-  // Storage BEFORE this delete, because the cascade does not touch Storage.
   revalidatePath("/dashboard", "layout");
   redirect("/dashboard/workspaces?notice=deleted");
 }

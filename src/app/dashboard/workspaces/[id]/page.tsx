@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DeleteWorkspaceButton } from "@/features/workspaces/components/delete-workspace-button";
 import { WorkspaceForm } from "@/features/workspaces/components/workspace-form";
+import { WorkspaceResources } from "@/features/resources/components/workspace-resources";
 import { getWorkspace } from "@/features/workspaces/queries";
 import { listTimeZones, publicPath, workspaceIdSchema } from "@/features/workspaces/schema";
 
@@ -59,6 +60,7 @@ async function WorkspaceContent({ params }: { params: Promise<{ id: string }> })
               <dd>{workspace.description ?? "No description."}</dd>
             </div>
           </dl>
+          <WorkspaceResources workspaceId={workspace.id} workspaceLocked />
           <div>
             <DeleteWorkspaceButton id={workspace.id} name={workspace.name} />
           </div>
@@ -76,13 +78,14 @@ async function WorkspaceContent({ params }: { params: Promise<{ id: string }> })
               timeZone: workspace.time_zone,
             }}
           />
+          <WorkspaceResources workspaceId={workspace.id} workspaceLocked={false} />
           <section aria-labelledby="danger-heading" className="grid max-w-xl gap-2 border-t border-border pt-5">
             <h2 id="danger-heading" className="font-heading text-base font-medium">
               Delete this workspace
             </h2>
             <p className="text-sm text-muted-foreground">
-              Permanently removes the workspace with its resources, availability, booking requests
-              and widget settings.
+              Permanently removes the workspace with its resources and their images, availability,
+              booking requests and widget settings.
             </p>
             <div>
               <DeleteWorkspaceButton id={workspace.id} name={workspace.name} />
