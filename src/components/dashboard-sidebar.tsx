@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { DashboardNav } from "@/components/dashboard-nav";
 import { Logo } from "@/components/logo";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
@@ -14,7 +15,11 @@ export function DashboardSidebar() {
         <Logo href="/dashboard" />
       </div>
       <div className="flex-1">
-        <DashboardNav />
+        {/* usePathname() needs the address, which is not known while a dynamic
+            route (/dashboard/workspaces/[id]) is prerendered, so it streams in. */}
+        <Suspense fallback={null}>
+          <DashboardNav />
+        </Suspense>
       </div>
       <UpgradePrompt />
     </aside>

@@ -77,3 +77,26 @@ export function limitLines(limits: PlanLimits): string[] {
     `${limits.maxMonthlyBookings.toLocaleString("en-US")} booking requests per month`,
   ];
 }
+
+/**
+ * Which plan really applies (rule DB7, repeated from the database function
+ * `current_plan`, decision Q12): Pro only when the plan is `pro` AND Stripe's
+ * status is `active` or `trialing`; anything else counts as Free. The database
+ * stays the real guard; this is for showing usage and friendly messages.
+ */
+export function effectivePlan(
+  subscription: { plan: string; status: string | null } | null | undefined,
+): PlanId {
+  if (
+    subscription?.plan === "pro" &&
+    (subscription.status === "active" || subscription.status === "trialing")
+  ) {
+    return "pro";
+  }
+  return "free";
+}
+
+/** "1 of 1 workspaces", "0 of 5 workspaces". */
+export function workspaceUsageLabel(used: number, max: number): string {
+  return `${used} of ${max} workspaces`;
+}

@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { OwnerGate } from "@/components/owner-gate";
 import { PageHeader } from "@/components/page-header";
 import { PlaceholderNotice } from "@/components/placeholder-notice";
 import { StatusBadge, type BookingStatus } from "@/components/status-badge";
+import { getWorkspaceUsage } from "@/features/workspaces/queries";
+import { PLANS } from "@/lib/plans";
 
 export const metadata: Metadata = { title: "Overview" };
 
 // Placeholder overview. Every number and name below is sample text.
 const STATS = [
-  { label: "Workspaces", value: "1", note: "of 1 on the Free plan" },
   { label: "Resources", value: "2", note: "of 3 on the Free plan" },
   { label: "Requests this month", value: "12", note: "of 100 on the Free plan" },
   { label: "Waiting for a decision", value: "3", note: "pending requests" },
@@ -22,12 +24,36 @@ const ACTIVITY: readonly { who: string; what: string; status: BookingStatus }[] 
   { who: "Sample visitor D", what: "Desk 4, Fri 11:00", status: "cancelled" },
 ];
 
+// The one real number on this page so far (Phase 8): the owner's workspaces.
+async function WorkspacesStatCard() {
+  const usage = await getWorkspaceUsage();
+  return (
+    <Card>
+      <CardHeader className="gap-1">
+        <CardDescription>Workspaces</CardDescription>
+        <CardTitle className="text-3xl font-semibold" data-testid="overview-workspaces-count">
+          {usage.used}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-1 text-sm text-muted-foreground">
+        <span>
+          of {usage.max} on the {PLANS[usage.plan].name} plan
+        </span>
+        <Link href="/dashboard/workspaces" className="font-medium text-foreground underline underline-offset-4">
+          Manage workspaces
+        </Link>
+      </CardContent>
+    </Card>
+  );
+}
+
 function DashboardOverviewContent() {
   return (
     <>
       <PageHeader title="Overview" description="A summary of your workspaces and booking requests." />
-      <PlaceholderNotice phase="Phase 13" />
+      <PlaceholderNotice phase="Phase 13">The workspaces count is real; the other numbers and the activity list are sample text.</PlaceholderNotice>
       <section aria-label="Summary" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <WorkspacesStatCard />
         {STATS.map((stat) => (
           <Card key={stat.label}>
             <CardHeader className="gap-1">

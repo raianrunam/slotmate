@@ -24,7 +24,7 @@ export function FormField({
 }: {
   id: string;
   label: string;
-  hint?: string;
+  hint?: React.ReactNode;
   error?: string;
   optional?: boolean;
   children: (props: FieldControlProps) => React.ReactNode;
