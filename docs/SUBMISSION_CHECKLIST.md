@@ -11,7 +11,7 @@ Repository: https://github.com/raianrunam/slotmate · Live site: https://slotmat
 | 1 | Public GitHub repository | done | https://github.com/raianrunam/slotmate. The repository is public; the whole Git history was scanned for secrets in Phase 17b with no real secret found ([`REQUIREMENTS_CHECKLIST.md`](REQUIREMENTS_CHECKLIST.md) SEC-01). |
 | 2 | Complete README | done | [`../README.md`](../README.md): live address, features, tech stack, screenshots, how to run locally, test commands with counts, links to every document, demo-video placeholder, "Built with Claude Code". The demo-video link inside it is a placeholder until row 5 is done. |
 | 3 | Database documentation | done | [`DATABASE.md`](DATABASE.md) (tables, rules, functions, row level security, migrations, with an entity diagram) and the 8 migrations in [`../supabase/migrations/`](../supabase/migrations/). Companion: [`ARCHITECTURE.md`](ARCHITECTURE.md). The Mermaid diagrams are being checked on GitHub by the owner (section 3 below). |
-| 4 | Screenshots | done | [`screenshots/`](screenshots/) (7 images), shown in the README. Not included: a landing-page image (the page still shows a draft notice, see the open items in section 4), the booking status page and the widget settings page. |
+| 4 | Screenshots | done | [`screenshots/`](screenshots/) (12 images), shown in the README: the live landing page (desktop and phone, taken after the final fix), the public booking page, the booking status page (pending and approved), dashboard, bookings, analytics, widget settings with preview, the embedded widget and billing. All were looked at before they were added; none shows a real address, key or project reference. |
 | 5 | Demo video | **pending** | Not recorded yet. Script: [`DEMO_SCRIPT.md`](DEMO_SCRIPT.md). When recorded, put the link here and in the README "Demo video" section. Video link: _to be added_. |
 | 6 | Reflection | **pending** | To be written by the owner in `docs/REFLECTION.md` (the file does not exist yet). The honest material to draw on is [`DEVELOPMENT_LOG.md`](DEVELOPMENT_LOG.md) ("Agent mistakes and how they were caught"). |
 | 7 | Requirement checklist | done | [`REQUIREMENTS_CHECKLIST.md`](REQUIREMENTS_CHECKLIST.md): 85 requirements, 82 done, 3 partly (EMBED-06, PERF-01, PERF-02), none missing; all 74 Must-haves done. Every requirement has its evidence (test titles or a manual check with owner and date). |
@@ -32,7 +32,7 @@ Full detail, dates and proof for each: [`AGENTIC_TOOLS.md`](AGENTIC_TOOLS.md).
 | 5 | Project skill `slotmate-phase` | [`../.claude/skills/slotmate-phase/`](../.claude/skills/slotmate-phase/) | `AGENTIC_TOOLS.md` section 5. |
 | 6 | Independent reviewer subagents | review reports kept in the owner's notes folder | `AGENTIC_TOOLS.md` section 6; the findings and fixes of each review are in `DEVELOPMENT_LOG.md` (for example the Phase 16 whole-app security review and the Phase 17 re-review). |
 | 7 | **Parallel worktrees** | two worktrees and branches, merged into `main` | `AGENTIC_TOOLS.md` section 7 and `DEVELOPMENT_LOG.md` "Parallel development evidence": `feat/phase13-analytics` and `feat/phase14-widget` from the same commit, launched together, ran at the same time for about seven minutes, merged without a conflict (merge commits `baae8aa` and `9c53394`). |
-| 8 | Playwright as the test runner | [`../tests/`](../tests/) | `AGENTIC_TOOLS.md` section 8; [`TESTING.md`](TESTING.md); 433 unit, 400 UI and 94 database tests on the last full run. |
+| 8 | Playwright as the test runner | [`../tests/`](../tests/) | `AGENTIC_TOOLS.md` section 8; [`TESTING.md`](TESTING.md); 435 unit and 400 UI tests (final run, 2026-11-16) and 94 database tests (Phase 17b) on the last full run. |
 | 9 | Playwright MCP server | [`../.mcp.json`](../.mcp.json) | `AGENTIC_TOOLS.md` section 9. It could not connect in the session that created it (recorded honestly); the visual check was done by a test that saved screenshots instead. |
 | - | OpenSpec | not used | Skipped on purpose, reason in `AGENTIC_TOOLS.md` section 10. |
 
@@ -46,7 +46,7 @@ Full detail, dates and proof for each: [`AGENTIC_TOOLS.md`](AGENTIC_TOOLS.md).
 ## 4. Open items to know about
 
 - **Demo video and reflection** are the two pending deliverables (rows 5 and 6).
-- **Landing page words are still the Phase 6 draft** ("Placeholder ... built in Phase 18" and "Paid plans are not available yet", which is no longer true). Changing them is a code change and needs the owner's go-ahead.
+- **Landing page leftovers: fixed (2026-11-16, commit `9857cd1`).** The owner found a "Placeholder" notice, "Paid plans are not available yet" and a fake-clickable example card on the live landing page during the final review. The notice and the `/design` page are gone, the example is a labelled figure, and tests guard against it coming back (`tests/unit/no-leftovers.spec.ts`, `tests/ui/no-leftovers.spec.ts`).
 - **PERF-01** stays "partly": the dashboard and booking list were not timed on production.
 - **`npm audit`** reports 12 findings, all in development tooling, none in the deployed app; the owner decides (`DEVELOPMENT_LOG.md`, Phase 17b).
 - Other known limits, each with where it is described: [`REQUIREMENTS_CHECKLIST.md`](REQUIREMENTS_CHECKLIST.md) section 5.

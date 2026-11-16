@@ -4,7 +4,7 @@ Last updated: 2026-11-16 · Phase 17b · Sources: `docs/DATABASE.md` section 10,
 
 This document says how SlotMate is tested, how to run the tests, what has been proved so far and what has not. The test *design* (what each test must prove) is in `docs/DATABASE.md` section 10; this document tracks the status.
 
-**Status in one line:** all 22 designed tests (T1–T22) are implemented and pass; the last two complete runs on 2026-11-16 (Phase 17b) each gave 94 database test cases, 433 unit checks and 400 UI tests, none failed and none skipped, run against the development Supabase project. Both global teardowns also check that no test user and no test file is left (section 4). Only T17 part 4 (account delete) is not built, because the feature does not exist. Unit checks (`npm run test:unit`) and user-interface checks (`npm run test:ui`) are described in section 6 and its sub-sections.
+**Status in one line:** all 22 designed tests (T1–T22) are implemented and pass; the last two complete runs on 2026-11-16 (Phase 17b) each gave 94 database test cases, 433 unit checks and 400 UI tests, none failed and none skipped, run against the development Supabase project. Both global teardowns also check that no test user and no test file is left (section 4). Only T17 part 4 (account delete) is not built, because the feature does not exist. Unit checks (`npm run test:unit`) and user-interface checks (`npm run test:ui`) are described in section 6 and its sub-sections. **Update 2026-11-16 (Phase 18):** after the final landing-page change and the removal of `/design`, `npm run test:unit` gives 435 and `npm run test:ui` 400, all passing; the database count (94) was not re-run.
 
 ---
 

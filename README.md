@@ -10,7 +10,13 @@ This is also a learning project: the owner is learning software engineering and 
 
 ## Screenshots
 
-Taken from the real app with throw-away test data (no real people or addresses).
+Taken from the real app (the landing page from the live site, the rest with throw-away demo data; no real people or addresses).
+
+**Landing page (live site)**
+
+![Landing page on a desktop](docs/screenshots/landing-desktop-1280.png)
+
+<img src="docs/screenshots/landing-phone-375.png" alt="Landing page on a phone" width="260">
 
 | | |
 |---|---|
@@ -19,6 +25,12 @@ Taken from the real app with throw-away test data (no real people or addresses).
 **Public booking page on a desktop (1280 px)**
 
 ![Public booking page on a desktop](docs/screenshots/public-booking-desktop-1280.png)
+
+**Booking status page:** the visitor's private link, first pending, then approved after the owner decides.
+
+![Booking status page, pending](docs/screenshots/status-page-pending.png)
+
+![Booking status page, approved](docs/screenshots/status-page-approved.png)
 
 **Dashboard overview:** counts, plan usage, the 30-day chart, requests waiting for a decision.
 
@@ -31,6 +43,10 @@ Taken from the real app with throw-away test data (no real people or addresses).
 **Analytics (Pro):** requests per day, by status, per month and per resource, each with a text table.
 
 ![Analytics](docs/screenshots/analytics-pro.png)
+
+**Widget settings:** theme, Pro-only layout and colour, a live preview of the saved options and the copyable embed code.
+
+![Widget settings with preview](docs/screenshots/widget-settings.png)
 
 **Embeddable widget:** the booking flow as it appears inside an iframe on another website.
 
@@ -161,10 +177,10 @@ Deploying your own copy to Vercel: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## Tests
 
-Counts from the last two complete runs on 2026-11-16 (Phase 17b), each: **433 unit checks, 400 UI tests and 94 database tests, none failed and none skipped** (run against the development Supabase project; details and the known flaky cases in [`docs/TESTING.md`](docs/TESTING.md)).
+Counts on 2026-11-16: **435 unit checks and 400 UI tests** (run after the final landing-page change, none failed, none skipped) and **94 database tests** (last run in Phase 17b, twice; not re-run since, because nothing in the database changed) (run against the development Supabase project; details and the known flaky cases in [`docs/TESTING.md`](docs/TESTING.md)).
 
 ```powershell
-npm run test:unit      # 433 checks: input rules, time maths, source-code guards. No browser, server or database.
+npm run test:unit      # 435 checks: input rules, time maths, source-code guards. No browser, server or database.
 npm run test:ui        # 400 tests in Chromium at 375, 768 and 1280 px, including accessibility scans. Needs .env.local.
 npm run test:db        # 94 tests of the database through real paths. Needs .env.local and the Supabase CLI login and link.
 npx tsc --noEmit       # type check
