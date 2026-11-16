@@ -53,6 +53,9 @@ async function giveImage(ownerId: string, resourceId: string): Promise<string> {
   return path;
 }
 
+// An upload makes several sequential round trips to the remote project (storage, database, clean-up of the old file).
+// Under the full parallel suite that can pass the 10 s default, so waits for the upload result use 30 s.
+
 // Clicking before React has hydrated posts the form as a plain page load and the message never appears
 // (Phase 17: the flaky upload tests).
 async function uploadClick(page: Page) {
@@ -239,7 +242,7 @@ test.describe("image (RES-05, D9, S1)", () => {
 
     await page.getByLabel("Upload an image").setInputFiles(png());
     await uploadClick(page);
-    await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
+    await expect(page.getByTestId("image-message")).toHaveText("Image saved.", { timeout: UPLOAD_WAIT });
     const image = page.getByTestId("resource-image");
     await expect(image).toBeVisible();
 
@@ -253,7 +256,7 @@ test.describe("image (RES-05, D9, S1)", () => {
     // Replace: a different file; the old one is deleted, the path changes.
     await page.getByLabel("Replace the image").setInputFiles(png(PNG_BYTES_2, "other.png"));
     await page.getByRole("button", { name: "Replace image" }).click();
-    await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
+    await expect(page.getByTestId("image-message")).toHaveText("Image saved.", { timeout: UPLOAD_WAIT });
     await expect.poll(async () => (await storedResources(owner.id))[0].image_path).not.toBe(stored.image_path);
     const [after] = await storedResources(owner.id);
     // The old file is removed right after the new path is saved (a moment later), so wait for it instead of reading once.
@@ -324,7 +327,7 @@ test.describe("image (RES-05, D9, S1)", () => {
       await page.goto(`/dashboard/resources/${id}`);
       await page.getByLabel("Upload an image").setInputFiles(png());
       await uploadClick(page);
-      await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
+      await expect(page.getByTestId("image-message")).toHaveText("Image saved.", { timeout: UPLOAD_WAIT });
     }
     expect(await listOwnerFiles(owner.id), "two files stored").toHaveLength(2);
 
@@ -360,7 +363,7 @@ test.describe("locked resources (after a downgrade)", () => {
     await page.goto(`/dashboard/resources/${r1}`);
     await page.getByLabel("Upload an image").setInputFiles(png());
     await uploadClick(page);
-    await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
+    await expect(page.getByTestId("image-message")).toHaveText("Image saved.", { timeout: UPLOAD_WAIT });
     const before = (await storedResources(owner.id)).find((r) => r.id === r1)!.image_path;
 
     // Pro ends over the Free limits: everything locks (nothing is chosen for the owner).
@@ -489,7 +492,7 @@ test.describe("another owner's resource and forged fields (the server refuses)",
     await page.reload();
     await page.getByLabel("Upload an image").setInputFiles(png());
     await uploadClick(page);
-    await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
+    await expect(page.getByTestId("image-message")).toHaveText("Image saved.", { timeout: UPLOAD_WAIT });
     await forgeOnSubmit(page, "form:has(input[name=intent])", { id: foreignId });
     await page.getByRole("button", { name: "Remove image" }).click();
     await expect(page.getByTestId("image-message")).toContainText("cannot make this change");
@@ -560,7 +563,7 @@ test.describe("image upload edge cases (Phase 9 review carry-overs)", () => {
     await page.reload();
     await page.getByLabel("Upload an image").setInputFiles(png());
     await uploadClick(page);
-    await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
+    await expect(page.getByTestId("image-message")).toHaveText("Image saved.", { timeout: UPLOAD_WAIT });
   });
 
   for (const [mime, ext] of [["image/jpeg", "jpg"], ["image/webp", "webp"]] as const) {
@@ -581,7 +584,7 @@ test.describe("image upload edge cases (Phase 9 review carry-overs)", () => {
 
       await page.getByLabel("Upload an image").setInputFiles({ name: `photo.${ext}`, mimeType: mime, buffer: Buffer.from(bytes) });
       await uploadClick(page);
-      await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
+      await expect(page.getByTestId("image-message")).toHaveText("Image saved.", { timeout: UPLOAD_WAIT });
       const [stored] = await storedResources(owner.id);
       expect(stored.image_path).toMatch(new RegExp(`\.${ext}$`));
       const url = await page.getByTestId("resource-image").getAttribute("src");
@@ -601,14 +604,14 @@ test.describe("image upload edge cases (Phase 9 review carry-overs)", () => {
     await page.goto(`/dashboard/resources/${ids[0]}`);
     await page.getByLabel("Upload an image").setInputFiles(png());
     await uploadClick(page);
-    await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
+    await expect(page.getByTestId("image-message")).toHaveText("Image saved.", { timeout: UPLOAD_WAIT });
     const [first] = await storedResources(owner.id);
     expect((await listResourceFiles(ids[0])).sort(), "the young stray is still there").toEqual([first.image_path, stray].sort());
 
     // A replace deletes the previous recorded image straight away (even though it is young)...
     await page.getByLabel("Replace the image").setInputFiles(png(PNG_BYTES_2, "second.png"));
     await page.getByRole("button", { name: "Replace image" }).click();
-    await expect(page.getByTestId("image-message")).toHaveText("Image saved.");
+    await expect(page.getByTestId("image-message")).toHaveText("Image saved.", { timeout: UPLOAD_WAIT });
     await expect.poll(async () => (await storedResources(owner.id))[0].image_path).not.toBe(first.image_path);
     const [second] = await storedResources(owner.id);
     await expect.poll(async () => (await listResourceFiles(ids[0])).sort()).toEqual([second.image_path, stray].sort());

@@ -422,13 +422,22 @@ export function readOnlySql(sql: string): Record<string, unknown>[] {
   const dir = mkdtempSync(path.join(tmpdir(), 'slotmate-sql-'))
   const file = path.join(dir, 'query.sql')
   writeFileSync(file, sql)
-  try {
-    const stdout = execSync(`npx supabase db query --remote --read-only -f "${file}"`, {
+  const run = () =>
+    execSync(`npx supabase db query --remote --read-only -f "${file}"`, {
       cwd: process.cwd(),
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 120_000,
     })
+  try {
+    // The query is read-only, so running it a second time after a failed call is safe. A real problem fails twice.
+    // (The CLI call failed once in the full run with no detail, then passed on every re-run: a transient hiccup.)
+    let stdout: string
+    try {
+      stdout = run()
+    } catch {
+      stdout = run()
+    }
     const parsed = JSON.parse(stdout.slice(stdout.indexOf('{'))) as {
       rows: Record<string, unknown>[]
     }
