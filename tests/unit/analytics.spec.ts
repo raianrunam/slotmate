@@ -8,6 +8,8 @@ import {
   dayStartInstant,
   defaultRange,
   monthlySeries,
+  overviewDailySeries,
+  overviewRange,
   parseRange,
   parseWorkspaceParam,
   pickWorkspace,
@@ -303,5 +305,46 @@ test.describe("source guards", () => {
   test("the chart component is a client component that imports no server module and gets only plain data", () => {
     expect(chart).toMatch(/^"use client"/);
     expect(chart).not.toMatch(/@\/lib|@\/features|supabase|server-only/);
+  });
+});
+
+test.describe("dashboard overview trend across workspaces (DASH-05)", () => {
+  test("the 30 days end on the LATEST local today among the zones", () => {
+    // 2026-11-15 10:00 UTC: Kiritimati (UTC+14) is already 16 Nov, Pago Pago (UTC-11) is still 14 Nov.
+    const r = overviewRange(["Pacific/Pago_Pago", "UTC", "Pacific/Kiritimati"], NOW);
+    expect(r.to).toBe("2026-11-16");
+    expect(r.from).toBe("2026-10-18");
+  });
+
+  test("no workspace uses UTC", () => {
+    expect(overviewRange([], NOW)).toEqual({ from: "2026-10-17", to: "2026-11-15" });
+  });
+
+  test("each booking is counted on its own workspace's local date, zero filled, 30 entries", () => {
+    const range = { from: "2026-10-17", to: "2026-11-15" };
+    // 2026-11-14 23:30 UTC is 15 Nov in Dhaka (UTC+6) but 14 Nov in UTC.
+    const s = overviewDailySeries(
+      [
+        { createdAt: "2026-11-14T23:30:00Z", timeZone: "Asia/Dhaka" },
+        { createdAt: "2026-11-14T23:30:00Z", timeZone: "UTC" },
+        { createdAt: "2026-11-14T10:00:00Z", timeZone: "UTC" },
+      ],
+      range,
+    );
+    expect(s).toHaveLength(30);
+    expect(s.find((p) => p.date === "2026-11-15")?.count).toBe(1);
+    expect(s.find((p) => p.date === "2026-11-14")?.count).toBe(2);
+    expect(s.filter((p) => p.count === 0)).toHaveLength(28);
+  });
+
+  test("a booking whose local day is outside the window is not counted", () => {
+    const s = overviewDailySeries([{ createdAt: "2026-01-01T00:00:00Z", timeZone: "UTC" }], { from: "2026-10-17", to: "2026-11-15" });
+    expect(s.reduce((n, p) => n + p.count, 0)).toBe(0);
+  });
+
+  test("the overview reads with the owner's session only (no admin client)", () => {
+    const q = read("src/features/analytics/queries.ts");
+    expect(q).not.toContain("admin");
+    expect(read("src/app/dashboard/page.tsx")).toContain("getOverviewTrend");
   });
 });

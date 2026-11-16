@@ -194,6 +194,36 @@ export function dailySeries(createdAts: readonly string[], timeZone: string, ran
   return points;
 }
 
+/**
+ * The 30 days of the dashboard overview (DASH-05), across all of an owner's workspaces. The window ends at the LATEST
+ * local "today" among the workspaces' zones, so no workspace's today is ever cut off. No workspace: UTC.
+ */
+export function overviewRange(timeZones: readonly string[], now: Date = new Date()): DateRange {
+  const zones = timeZones.length > 0 ? timeZones : ["UTC"];
+  const to = zones.map((zone) => todayInZone(zone, now)).reduce((a, b) => (a > b ? a : b));
+  return { from: addDaysToDate(to, -(FREE_DAYS - 1)), to };
+}
+
+/**
+ * Requests per day across workspaces (DASH-05): every booking is placed on the calendar day it was made in ITS OWN
+ * workspace's zone (A12), then the days are summed. One entry for every day of the range (zero filled); a booking whose
+ * local day falls outside the range is not counted.
+ */
+export function overviewDailySeries(facts: readonly { createdAt: string; timeZone: string }[], range: DateRange): DayPoint[] {
+  const counts = new Map<string, number>();
+  for (const f of facts) {
+    const day = dateIn(f.createdAt, f.timeZone);
+    counts.set(day, (counts.get(day) ?? 0) + 1);
+  }
+  const points: DayPoint[] = [];
+  const length = daysBetween(range.from, range.to) + 1;
+  for (let i = 0; i < length; i++) {
+    const date = addDaysToDate(range.from, i);
+    points.push({ date, label: dayLabel(date), count: counts.get(date) ?? 0 });
+  }
+  return points;
+}
+
 export interface MonthPoint {
   /** YYYY-MM, in the workspace's zone. */
   month: string;

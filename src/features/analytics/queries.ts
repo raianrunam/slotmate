@@ -4,6 +4,9 @@ import {
   analyticsAccess,
   buildAnalytics,
   collectPages,
+  overviewDailySeries,
+  overviewRange,
+  type DayPoint,
   rangeBounds,
   type AnalyticsAccess,
   type AnalyticsData,
@@ -118,4 +121,65 @@ export async function getAnalytics(input: {
   }
 
   return { data: buildAnalytics({ facts, resources, timeZone: workspace.timeZone, range, access }), truncated };
+}
+
+export interface OverviewTrend {
+  range: DateRange;
+  daily: DayPoint[];
+  total: number;
+  truncated: boolean;
+}
+
+/**
+ * DASH-05: requests per day for the last 30 days across ALL of the owner's workspaces, each booking on its own
+ * workspace's local date. Owner session (RLS); only created_at and the workspace id are read. The query window is
+ * the widest instant span of the workspaces' days; the exact local-day split is done by overviewDailySeries.
+ */
+export async function getOverviewTrend(): Promise<OverviewTrend> {
+  const workspaces = await listAnalyticsWorkspaces();
+  const range = overviewRange(workspaces.map((w) => w.timeZone));
+  if (workspaces.length === 0) {
+    return { range, daily: overviewDailySeries([], range), total: 0, truncated: false };
+  }
+  const zoneOf = new Map(workspaces.map((w) => [w.id, w.timeZone]));
+  const bounds = workspaces.map((w) => rangeBounds(range, w.timeZone));
+  const from = new Date(Math.min(...bounds.map((b) => b.from.getTime()))).toISOString();
+  const until = new Date(Math.max(...bounds.map((b) => b.until.getTime()))).toISOString();
+  const supabase = await createClient();
+
+  const counted = await supabase
+    .from("bookings")
+    .select("id, resources!inner(workspace_id)", { count: "exact", head: true })
+    .gte("created_at", from)
+    .lt("created_at", until);
+  if (counted.error) {
+    console.error("getOverviewTrend count failed", { code: counted.error.code });
+    throw new Error("Could not load your booking trend.");
+  }
+  const collected = await collectPages<{ createdAt: string; timeZone: string }>(
+    async (offset) => {
+      const res = await supabase
+        .from("bookings")
+        .select("created_at, resources!inner(workspace_id)")
+        .gte("created_at", from)
+        .lt("created_at", until)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(offset, offset + PAGE - 1);
+      if (res.error) {
+        console.error("getOverviewTrend bookings failed", { code: res.error.code });
+        throw new Error("Could not load your booking trend.");
+      }
+      const rows = (res.data ?? []) as unknown as { created_at: string; resources: { workspace_id: string } | { workspace_id: string }[] }[];
+      return rows.flatMap((r) => {
+        const resource = Array.isArray(r.resources) ? r.resources[0] : r.resources;
+        const timeZone = resource ? zoneOf.get(resource.workspace_id) : undefined;
+        return timeZone ? [{ createdAt: r.created_at, timeZone }] : [];
+      });
+    },
+    counted.count ?? 0,
+    MAX_PAGES * PAGE,
+  );
+  const daily = overviewDailySeries(collected.rows, range);
+  return { range, daily, total: daily.reduce((sum, d) => sum + d.count, 0), truncated: collected.truncated };
 }

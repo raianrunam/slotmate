@@ -10,6 +10,10 @@ import { getResourceUsage } from "@/features/resources/queries";
 import { whenLabel } from "@/features/bookings/format";
 import { getOverviewStats, getPendingRequests, getRecentActivity, type BookingListRow } from "@/features/bookings/queries";
 import { PLANS } from "@/lib/plans";
+import { getOverviewTrend } from "@/features/analytics/queries";
+import { dayLabel } from "@/features/analytics/aggregate";
+import { CountBarChart } from "@/features/analytics/components/bar-chart";
+import { DataTable } from "@/features/analytics/components/analytics-view";
 
 export const metadata: Metadata = { title: "Overview" };
 
@@ -215,6 +219,40 @@ async function ActivitySections() {
   );
 }
 
+// DASH-05: requests per day for the last 30 days across all workspaces. Same chart and table as the Analytics page.
+async function TrendSection() {
+  const trend = await getOverviewTrend();
+  const data = trend.daily.map((d) => ({ label: d.label, value: d.count }));
+  return (
+    <section aria-labelledby="trend-heading" data-testid="overview-trend">
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2 id="trend-heading" className="font-heading text-base font-medium">
+              Booking requests, last 30 days
+            </h2>
+          </CardTitle>
+          <CardDescription>Requests received each day, across all your workspaces.</CardDescription>
+        </CardHeader>
+        <CardContent className="min-w-0">
+          {trend.total === 0 ? (
+            <p data-testid="overview-trend-empty" className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+              No data yet. No booking requests were received in the last 30 days.
+            </p>
+          ) : (
+            <CountBarChart data={data} valueName="Requests" ariaLabel="Bar chart of booking requests received per day over the last 30 days, all workspaces. The same numbers are in the table below." />
+          )}
+          <DataTable testId="overview-trend-table" caption="Booking requests received per day, all workspaces" head={["Day", "Requests"]} rows={trend.daily.map((d) => [`${dayLabel(d.date)} (${d.date})`, d.count])} />
+          <p className="mt-3 text-sm text-muted-foreground" data-testid="overview-trend-note">
+            The 30 days end on the latest local today among your workspaces. Each request is counted on the day it was received in its own workspace&apos;s time zone. Deleted requests are not counted.
+          </p>
+          {trend.truncated ? <p className="mt-2 text-sm text-muted-foreground">Very many requests: the numbers cover the first 20,000 only.</p> : null}
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
 function DashboardOverviewContent() {
   return (
     <>
@@ -224,6 +262,7 @@ function DashboardOverviewContent() {
         <ResourcesStatCard />
         <BookingStatCards />
       </section>
+      <TrendSection />
       <ActivitySections />
     </>
   );

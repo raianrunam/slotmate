@@ -17,7 +17,7 @@ import { BOOKING_STATUSES, dayLabel, type AnalyticsAccess, type AnalyticsData } 
 
 const STATUS_LABEL: Record<BookingStatus, string> = { pending: "Pending", approved: "Approved", rejected: "Rejected", cancelled: "Cancelled" };
 
-function DataTable({ caption, head, rows, testId }: { caption: string; head: [string, string]; rows: [string, number][]; testId: string }) {
+export function DataTable({ caption, head, rows, testId }: { caption: string; head: [string, string]; rows: [string, number][]; testId: string }) {
   return (
     <details data-testid={testId} className="mt-3 rounded-md border border-border text-sm">
       <summary className="cursor-pointer px-3 py-2 font-medium">View as a table</summary>
