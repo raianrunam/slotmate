@@ -279,7 +279,8 @@ Owner's manual evidence (recorded in Phase 17b, also in `docs/REQUIREMENTS_CHECK
 - **Supabase Auth minimum password length 8 and "Secure password change" ON:** YES (manual, owner, 2026-11-15). This closes the "Secure password change" item below.
 - **Stripe Checkout page showed $9.99 per month:** YES (manual, owner, 2026-11-15).
 - **Customer Portal cancel worked; an immediate cancel in Stripe locked everything and the selection screen unlocked exactly the owner's choice:** YES (manual, owner, 2026-11-15).
-- Still open: that plan switching is off in the Customer Portal (not part of the four checks); the `Secure` cookie flag and the page-load times on the deployed site; the Phase 12, 13 and 14 hand-over lists; a real phone and a screen reader; `npm audit` (see Phase 17b).
+- **Closed on 2026-11-16 (Phase 18 part 2):** the `Secure` cookie flag on production, plan switching off in the Customer Portal (turned off in Phase 15), a real sign-up on production, a booking and a test payment on production (see the Phase 18 part 2 entry).
+- Still open: the dashboard and booking-list load times on the deployed site; the Phase 12, 13 and 14 hand-over lists; a real phone and a screen reader; `npm audit` (see Phase 17b).
 
 Analytics and widget (Phases 13 and 14):
 
@@ -396,6 +397,21 @@ Authentication (Phase 7):
 - **Still open (by hand):** SEC-05 (Secure cookie), one real sign-up email, one test payment on production, timing a real booking page, the dashboard and the booking list on production.
 - **Changes:** no migration written (the existing 8 were pushed to the new project), no Supabase setting changed from the command line (the Auth settings were set by the owner in the dashboard), no package change; added `vercel.json` and `docs/DEPLOYMENT.md`.
 
+## Phase 18, part 2 — Owner's production checks and the submission material (2026-11-16)
+
+- **Owner's manual checks on production** (https://slotmate-lac.vercel.app; manual, owner, 2026-11-16; recorded here and in `docs/REQUIREMENTS_CHECKLIST.md`):
+  - A real sign-up with a real inbox: the confirmation email arrived and linked to the production site, and login worked. YES.
+  - The session cookies on production are `Secure` and `HttpOnly`: YES. This closes SEC-05, the last Must-have that was not fully done (all 74 Must-haves are now done).
+  - A booking worked on production: YES.
+  - A Stripe test payment made the owner Pro on production: YES. This shows the production webhook secret and the price id work.
+  - The production Supabase Auth settings and URL configuration are set: YES.
+  - Stripe Customer Portal plan switching was turned off in Phase 15 (Stripe setting; the owner recorded it on 2026-11-16).
+  - Not covered by these checks: timing the dashboard and the booking list on production (PERF-01 stays "partly").
+- **Mistake, recorded honestly:** during Phase 18 part 1 the agent created a throw-away Vercel project named `xff-probe` (to test whether Vercel replaces a forged `x-forwarded-for` header) **without the owner's explicit authorization**. It was harmless (no secrets, no data) and was deleted with the owner's approval, but the creation itself should have been asked about first. It is also listed in `DEPLOYMENT.md` section 6.
+- **Written in this step:** a final README (live address, features, stack, screenshots, run locally, test counts, links to every document, a demo-video placeholder, a "Built with Claude Code" section); `docs/screenshots/` with 7 images chosen from the Phase 17 visual run and each looked at before it was copied (no real address, key or project reference visible; the dashboard shows only a shortened throw-away `slotmate-test-...@example.com` address); `docs/DEMO_SCRIPT.md`; `docs/SUBMISSION_CHECKLIST.md`.
+- **Left out on purpose:** the landing-page screenshot, because the page in that run still carried its "Placeholder ... Phase 18" notice and "Paid plans are not available yet". There is also no screenshot of the booking status page or of the widget settings page: they are not in the screenshot folder. **Open owner decision:** the landing page words are still the Phase 6 draft; changing them is a code change, which this step was not authorized to make.
+- **Changes:** documents, images and a deleted local branch (`setup/multi-agent`, fully merged). No code, migration, setting, package or database change. The tests were not re-run (nothing they cover changed); the counts quoted are those of the Phase 17b runs.
+
 ## Change history
 
 - **2026-11-14** — Created (Phase 5) with entries for Phases 1–5.
@@ -411,3 +427,4 @@ Authentication (Phase 7):
 - **2026-11-15** — Added the Phase 17 entry.
 - **2026-11-16** — Added the Phase 17b entry and the owner's manual evidence under Open items.
 - **2026-11-16** — Added the Phase 18 part 1 (deployment) entry.
+- **2026-11-16** — Added the Phase 18 part 2 entry (owner's production checks, the `xff-probe` mistake, the submission material).

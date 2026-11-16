@@ -159,7 +159,7 @@ Prepared 2026-11-15 and updated 2026-11-16 (Phase 17b: the owner's manual eviden
 | SEC-02 | Server-side validation | Must | Must | done | Done: zod checks repeated on the server for every form (`unit/schema`, `unit/workspaces`, `unit/resources`, `unit/availability`, `unit/public-booking`, `unit/embed`, `unit/bookings`) and the forged-field UI tests (for example `ui/resources` "forged owner_id, workspace_id, is_locked and image_path on the owner's OWN resource are ignored"). **Missing:** "text typed by users can never run as code": no automated test with script text (XSS) found; React escapes output, which is a design property, not a test. **Closed in Phase 17b:** `ui/xss` "script and HTML in names, descriptions and notes show as plain text everywhere (SEC-02)": script, image-with-handler and bold-tag text typed into workspace name and description, resource name and description, visitor name and note is shown literally on the public page, widget, status page, dashboard overview, workspace list, resource list, booking list, booking details and analytics; no script ran and no element was created. |
 | SEC-03 | Authorization on every action | Must | Must | done | Logged out: `unit/workspaces`, `unit/resources`, `unit/availability`, `unit/bookings`, `unit/embed` and `unit/billing` each have a source guard that every action checks the owner first. Other owner's data: `ui/bookings` "another owner's booking, refused through the actions"; `ui/resources` "another owner's resource and forged fields (the server refuses)"; `ui/availability` "a save with a foreign resource id (and forged fields) changes nothing"; `ui/embed` "a forged workspace id of another owner changes nothing"; `ui/analytics` "the workspace selector lists only my own workspaces, switches between them, and a foreign id falls back to my first"; `db/t05` for the subscription. |
 | SEC-04 | Webhook verification | Must | Must | done | `unit/billing` "signature check: a correct signature is accepted, anything else is refused"; `unit/webhook-handler` "a bad signature answers 400, and so does a missing one"; `ui/billing` "wrong or missing signatures are refused with 400 before anything else". A correctly signed message is accepted: `ui/billing-webhook` "the verified checkout message made the owner Pro, from Stripe's own data". |
-| SEC-05 | Safe sessions | Must | Must | **partly** | Done: `ui/auth` "login cookies are httpOnly and not readable by page scripts (AUTH-05)"; `unit/architecture` "passwords and emails are never written to a log"; logout makes the session unusable: `ui/auth` "logout ends the session; /dashboard redirects again; Back shows no dashboard". **Still open (needs the deployed site):** "cookies sent only over HTTPS in production" (the `Secure` flag): no automated test found; manual: after deploying, read the Set-Cookie header of the login response. |
+| SEC-05 | Safe sessions | Must | Must | done | Done: `ui/auth` "login cookies are httpOnly and not readable by page scripts (AUTH-05)"; `unit/architecture` "passwords and emails are never written to a log"; logout makes the session unusable: `ui/auth` "logout ends the session; /dashboard redirects again; Back shows no dashboard". **Closed in Phase 18 (2026-11-16):** on the production site (https://slotmate-lac.vercel.app) the session cookies are `Secure` and `HttpOnly` (manual, owner, 2026-11-16). No automated test reads this; it is a manual check on the deployed site. |
 | SEC-06 | Rate limit on the public form | Must | Must | done | `db/t14` "5 attempts are allowed, the 6th and every later one is refused (refused attempts count)"; "another workspace is unaffected, another visitor in the same workspace is unaffected"; "it never counts toward the owner monthly limit, and no booking is made"; `ui/booking` "the 6th request in 10 minutes from one visitor to one workspace is refused; another workspace is unaffected". The 10-minute window ending cannot be tested (section 5). |
 
 ### Data isolation
@@ -203,23 +203,23 @@ Counts are by status as given in the tables above. "Must" and "Nice" follow the 
 | ANLT | 6 | 4 | 2 | 6 | 0 | 0 |
 | EMBED | 7 | 5 | 2 | 6 | 1 | 0 |
 | BILL | 9 | 9 | 0 | 9 | 0 | 0 |
-| SEC | 6 | 6 | 0 | 5 | 1 | 0 |
+| SEC | 6 | 6 | 0 | 6 | 0 | 0 |
 | ISO | 3 | 3 | 0 | 3 | 0 | 0 |
 | PERF | 3 | 1 | 2 | 1 | 2 | 0 |
 | RESP | 2 | 0 | 2 | 2 | 0 | 0 |
-| **All** | **85** | **74** | **11** | **81** | **4** | **0** |
+| **All** | **85** | **74** | **11** | **82** | **3** | **0** |
 
-**Must-haves (74):** 73 done, 1 partly (SEC-05), 0 not done.
+**Must-haves (74):** 74 done, 0 partly, 0 not done.
 **Nice-to-haves (11):** 8 done, 3 partly (EMBED-06, PERF-01, PERF-02), 0 not done.
 
-**After Phase 17b (2026-11-16):** the only Must-have that is not fully done is SEC-05 (the `Secure` flag on the session cookie in production), which needs the deployed site. The other ten were closed: AUTH-01, AUTH-06, BILL-02, BILL-04 and BILL-09 by the owner's own checks on 2026-11-15 ("manual, owner, 2026-11-15") and DASH-05, RES-06, AVAIL-05, SEC-01 and SEC-02 by new code and tests. The three partly Nice-to-haves: EMBED-06 (owner decision open), PERF-01 (needs the deployed site) and PERF-02 (no 1,000-booking test; the architecture document marks it skippable).
+**After Phase 18 (2026-11-16):** SEC-05 is closed by the owner's check on production (see the manual list below), so every Must-have is done. Before that, after Phase 17b: the only Must-have that is not fully done is SEC-05 (the `Secure` flag on the session cookie in production), which needs the deployed site. The other ten were closed: AUTH-01, AUTH-06, BILL-02, BILL-04 and BILL-09 by the owner's own checks on 2026-11-15 ("manual, owner, 2026-11-15") and DASH-05, RES-06, AVAIL-05, SEC-01 and SEC-02 by new code and tests. The three partly Nice-to-haves: EMBED-06 (owner decision open), PERF-01 (needs the deployed site) and PERF-02 (no 1,000-booking test; the architecture document marks it skippable).
 
 ## 4. What a person still has to check by hand (manual list)
 
 1. ~~Real sign-up, confirmation email, login, forgot-password email and reset in one real browser and inbox (AUTH-01, AUTH-06).~~ Done: manual, owner, 2026-11-15.
 2. ~~Supabase dashboard: the Auth minimum password length is 8, and "Secure password change" is on (AUTH-01).~~ Done: manual, owner, 2026-11-15.
-3. Stripe test mode: ~~the Checkout page shows $9.99 per month; Customer Portal opens and cancelling works~~ (done: manual, owner, 2026-11-15; BILL-02, BILL-04, BILL-09). Still unchecked: that plan switching is off in the Customer Portal.
-4. After deployment: the session cookie has the `Secure` flag (SEC-05) (still to do by hand on https://slotmate-lac.vercel.app); ~~the home and login pages meet 3 seconds on the real site~~ (done: measured in Phase 18, `DEPLOYMENT.md` 4d); still to time on production once a workspace exists: the public booking page with a real resource, the dashboard and the booking list (PERF-01).
+3. Stripe test mode: ~~the Checkout page shows $9.99 per month; Customer Portal opens and cancelling works~~ (done: manual, owner, 2026-11-15; BILL-02, BILL-04, BILL-09). Plan switching in the Customer Portal was turned off in Phase 15 (recorded by the owner on 2026-11-16; it is a Stripe setting, so nothing in the code can show it).
+4. After deployment: ~~the session cookie has the `Secure` flag (SEC-05)~~ (done: manual, owner, 2026-11-16, on https://slotmate-lac.vercel.app, with `HttpOnly` too); ~~the home and login pages meet 3 seconds on the real site~~ (done: measured in Phase 18, `DEPLOYMENT.md` 4d); still to time on production (not covered by the owner's checks of 2026-11-16): the public booking page with a real resource, the dashboard and the booking list (PERF-01).
 5. ~~A secret scan of the whole Git history (SEC-01).~~ Done in Phase 17b (no real secret found; see SEC-01).
 6. The hand-over lists of Phases 12, 13 and 14 (booking actions in a browser, charts in light and dark at 375 px, the embed code pasted into a real third-party page, a light widget while the system theme is dark): listed as "not tested by a person" in DEVELOPMENT_LOG, Open items.
 7. Real phone and a screen reader (RESP-01, RESP-02; TESTING.md 6 and 6d).
@@ -230,7 +230,7 @@ Each line names the document and section where it is described. "Doc" = the file
 
 **Money and billing**
 - **A past_due subscription loses Pro at once (no grace period).** If a card payment fails and Stripe marks the subscription `past_due`, SlotMate treats the owner as Free immediately, with the downgrade lock. Accepted for version 1. `DATABASE.md` 7.7 ("Known limitation — past_due loses Pro immediately") and decision DB7; `DEVELOPMENT_LOG.md` Phase 15 "Owner decisions after the review".
-- **Phase 16 security review, two medium findings: fixed in Phase 17** (the webhook now ends Pro when the stored subscription leaves the Pro price, and cancels and refunds an extra subscription; `DATABASE.md` 7.6). What remains: whether the Customer Portal's plan switching is off cannot be checked from code, and the refund/cancel path was tested with real Stripe test objects only in test mode.
+- **Phase 16 security review, two medium findings: fixed in Phase 17** (the webhook now ends Pro when the stored subscription leaves the Pro price, and cancels and refunds an extra subscription; `DATABASE.md` 7.6). What remains: the refund/cancel path was tested with real Stripe test objects only in test mode.
 - **Not tested:** the webhook's deadlock retry, a Stripe outage, and the branch for a subscription Stripe no longer has. `TESTING.md` 6h "Status"; `DEVELOPMENT_LOG.md` Phase 15 "Still not tested".
 
 **Dates and times**
@@ -261,7 +261,7 @@ Each line names the document and section where it is described. "Doc" = the file
 **Settings and environment**
 - **The Supabase Auth settings are not verified from code.** The local `supabase/config.toml` differs from the live project in about 15 places (it says a minimum password length of 6) and must not be pushed. "Secure password change" still has to be turned on. `DEVELOPMENT_LOG.md` Open items "Authentication (Phase 7)".
 - **`npm audit`** now reports 12 findings (2 low, 10 moderate), all in development tooling: the `shadcn` command-line package (its `deepmerge`, `ts-morph` and `minimatch`) and `typescript-eslint`. None runs in the deployed app (the app only imports one CSS file from `shadcn`). The only offered fix is `npm audit fix --force`, which would install `shadcn@1.0.0` (a major downgrade); `typescript-eslint` has no fix. Nothing was changed; the owner decides. `DEVELOPMENT_LOG.md` Phase 17b.
-- **Mermaid diagrams** in `DATABASE.md` (1) and `ARCHITECTURE.md` (4) have not been rendered by a tool. `DATABASE.md` section 13.
+- **Mermaid diagrams** in `DATABASE.md` (1) and `ARCHITECTURE.md` (4) have not been rendered by a tool; the owner is checking them on GitHub (Phase 18). `DATABASE.md` section 13.
 
 **Testing and process**
 - **No automatic pipeline (CI):** the three test suites run by hand against a real development project; Supabase limits password sign-ins, so a full UI run can report "Request rate limit reached" (wait and re-run); one bookings test ("the badge counts only my pending requests") failed once under load and passed alone. `TESTING.md` sections 5 and 6d; `DEVELOPMENT_LOG.md` Phase 15 "Flaky, known".

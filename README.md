@@ -1,10 +1,82 @@
 # SlotMate
 
-SlotMate is a booking and resource-management web app. An **owner** creates workspaces and the things people can book (rooms, desks, equipment, appointments), sets when each one is open, and shares a public page where **visitors** request a time slot without creating an account. The owner then approves or rejects each request from a dashboard. Paid plans raise the limits and unlock more analytics and a customizable website widget.
+**Live site: <https://slotmate-lac.vercel.app>** (Stripe runs in **test mode only**: no real money is ever taken; use Stripe's test card `4242 4242 4242 4242`).
 
-> **Status: work in progress (Phases 1–6 of 18 done).** The requirements, architecture and database are designed and built, and the database is partly tested (9 of the 21 designed tests so far; see [`docs/TESTING.md`](docs/TESTING.md)). The page shells exist (a landing page, auth screens, the dashboard, the public booking page, the status page and the widget), but they show placeholder text and read no data; the working features below are **not built yet**. This README describes the plan and says what exists today.
+SlotMate is a booking and resource-management web app. An **owner** creates workspaces and the things people can book (rooms, desks, equipment, appointments), sets when each one is open, and shares a public page where **visitors** request a time slot without creating an account. The owner approves or rejects each request from a dashboard. Paid plans raise the limits and unlock more analytics and a customizable website widget.
 
 This is also a learning project: the owner is learning software engineering and working with AI coding agents. The honest story of what went well and what went wrong is in [`docs/DEVELOPMENT_LOG.md`](docs/DEVELOPMENT_LOG.md).
+
+> **Status: the app is built, tested and deployed (Phases 1 to 17 and the deployment part of Phase 18).** 82 of the 85 requirements are done, 3 are partly done and none is missing (all 74 Must-haves are done); see [`docs/REQUIREMENTS_CHECKLIST.md`](docs/REQUIREMENTS_CHECKLIST.md) for the status and the evidence of each one. The demo video and the written reflection are still to come (see [Demo video](#demo-video) and [`docs/SUBMISSION_CHECKLIST.md`](docs/SUBMISSION_CHECKLIST.md)).
+
+## Screenshots
+
+Taken from the real app with throw-away test data (no real people or addresses).
+
+| | |
+|---|---|
+| **Public booking page on a phone (375 px).** A visitor picks a resource, a date and a time, and sends a request without an account. | ![Public booking page on a phone](docs/screenshots/public-booking-phone-375.png) |
+
+**Public booking page on a desktop (1280 px)**
+
+![Public booking page on a desktop](docs/screenshots/public-booking-desktop-1280.png)
+
+**Dashboard overview:** counts, plan usage, the 30-day chart, requests waiting for a decision.
+
+![Dashboard overview](docs/screenshots/dashboard-overview.png)
+
+**Bookings list:** filter by status, search, approve, reject, cancel or delete.
+
+![Bookings list](docs/screenshots/bookings-list.png)
+
+**Analytics (Pro):** requests per day, by status, per month and per resource, each with a text table.
+
+![Analytics](docs/screenshots/analytics-pro.png)
+
+**Embeddable widget:** the booking flow as it appears inside an iframe on another website.
+
+![Embedded widget](docs/screenshots/embedded-widget.png)
+
+**Billing:** current plan, usage against the limits, and the two plans (Stripe test mode).
+
+![Billing](docs/screenshots/billing-pro.png)
+
+## Demo video
+
+Demo video: _link to be added_ (a script for it is in [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)).
+
+## Features
+
+Requirement IDs are in [`docs/PROJECT_REQUIREMENTS.md`](docs/PROJECT_REQUIREMENTS.md).
+
+- **Accounts** for owners: register with email confirmation, log in, log out, password recovery, a protected dashboard.
+- **Workspaces** (one place an owner manages, with its own public address and time zone) and **resources** (a bookable thing with a description, an image, a fixed slot length and a capacity).
+- **Weekly availability** per resource: open weekdays and hours; slots are cut from the slot length in the workspace's time zone. Two bookings can never overlap, even when requests arrive at the same moment.
+- **Public booking page** per workspace: visitors choose a resource, a date and a time, give their details and submit, with no registration. A private status link shows the request's state. A rate limit protects the form.
+- **Booking management**: list, details, approve, reject, cancel an approved booking, delete, filter by status, search by visitor or resource, a pending badge.
+- **Analytics** with charts (each has a text table) and a 30-day chart on the dashboard overview.
+- **Embeddable widget** (an iframe) with a live preview and copyable code.
+- **Billing** with Stripe (test mode): upgrade through Checkout, manage or cancel through the Customer Portal, a signed webhook, and a safe downgrade where nothing is deleted.
+
+### Free and Pro plans
+
+- **Free**: 1 workspace, 3 resources, 100 booking requests per month, basic analytics, basic embed widget (light or dark theme).
+- **Pro** ($9.99 per month): 5 workspaces, 25 resources, 1,000 booking requests per month, advanced analytics (monthly chart, resource usage, date filters) and the customizable widget (grid layout, background colour).
+
+The limits are enforced in the database, not only in the interface. If an owner downgrades, nothing is deleted: the owner chooses one workspace and up to three resources to keep active, and the rest become read-only until the owner deletes some or upgrades.
+
+## Tech stack
+
+- **Next.js 16** (App Router), **React 19**, **TypeScript**, **Tailwind CSS 4**
+- **Supabase**: PostgreSQL with row level security, Auth, Storage (8 migrations, 11 tables)
+- **Stripe** (test mode): Checkout, Customer Portal, signed webhook
+- **Recharts** for charts, **zod** for input checks, **@date-fns/tz** time-zone helpers
+- **shadcn/ui** (Radix UI and Lucide icons) for the interface components
+- **Playwright** for unit, UI and database tests; **axe-core** for accessibility scans
+- **Vercel** hosting (Singapore region), **Supabase CLI** for migrations and generated types
+
+## Architecture in short
+
+The browser never talks to the database. Pages and forms go through our Next.js server, which checks every rule; the database is the last line of defence and enforces the rules that matter most (data isolation, plan limits, no double booking, allowed status changes). Visitors have no database permissions at all: public pages are built by server code. Times are stored as exact moments, opening hours as plain clock times, and every workspace has a time zone name. More in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/DATABASE.md`](docs/DATABASE.md).
 
 ## Words used in this README
 
@@ -18,90 +90,21 @@ This is also a learning project: the owner is learning software engineering and 
 
 More definitions: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 0 and [`docs/DATABASE.md`](docs/DATABASE.md) section 1.
 
-## Features
-
-Planned for version 1 (requirement IDs are in [`docs/PROJECT_REQUIREMENTS.md`](docs/PROJECT_REQUIREMENTS.md)):
-
-- **Accounts** for owners: register, log in, log out, password recovery, a protected dashboard.
-- **Workspaces** (one place an owner manages, with its own public address and time zone) and **resources** (a bookable thing, with a description, an image, a fixed slot length and a capacity).
-- **Weekly availability** per resource: open weekdays and opening hours; slots are cut from the slot length. Two bookings can never overlap.
-- **Public booking page** per workspace: visitors choose a resource, a date and a time, give their details and submit, with no registration. A private status link shows the request's state.
-- **Booking management**: list, details, approve, reject, cancel an approved booking, delete, filter by status, search by visitor or resource.
-- **Analytics** dashboard with charts.
-- **Embeddable widget** (an iframe) that shows the booking page on another website, with a live preview and copyable code.
-- **Billing** with Stripe (test mode): upgrade, cancel, and a locked-but-safe state on downgrade.
-
-### Free and Pro plans
-
-- **Free**: 1 workspace, 3 resources, 100 booking requests per month, basic analytics, basic embed widget (light or dark theme).
-- **Pro** ($9.99 per month): 5 workspaces, 25 resources, 1,000 booking requests per month, advanced analytics (monthly chart, resource usage, date filters) and the customizable widget (grid layout, background colour).
-
-The limits are stored in the database and are designed to be enforced there, not only in the interface (the SQL is deployed; the tests for the limits are planned). If an owner downgrades, nothing is deleted: the owner chooses one workspace and up to three resources to keep active, and the rest become read-only until the owner deletes some or upgrades.
-
-## Tech stack
-
-- **Next.js 16** (App Router), **React 19**, **TypeScript**, **Tailwind CSS 4**
-- **Supabase**: PostgreSQL with row level security, Auth, Storage
-- **Stripe** (test mode) for subscriptions (Phase 15)
-- **Recharts** for charts (Phase 13)
-- **shadcn/ui** (Radix UI and Lucide icons) for the interface components
-- **Playwright** for tests
-- **Supabase CLI** for migrations and generated types
-
-Everything not yet in `package.json` (Stripe, Recharts, `zod`, `date-fns`, shadcn/ui and so on) is planned: see the technology list in [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md) and the extra libraries in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 9; each addition needs its own approval.
-
-## Architecture in short
-
-The browser never talks to the database. Pages and forms go through our Next.js server, which checks every rule; the database is the last line of defence and enforces the rules that matter most (data isolation, plan limits, no double booking, allowed status changes). Visitors have no database permissions at all: public pages are built by server code. Times are stored as exact moments, opening hours as plain clock times, and every workspace has a time zone name.
-
-Read more:
-
-- [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md): the project brief and the 18 phases.
-- [`docs/PROJECT_REQUIREMENTS.md`](docs/PROJECT_REQUIREMENTS.md): what the app must do.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): how the parts fit together and where each security check happens.
-- [`docs/DATABASE.md`](docs/DATABASE.md): tables, rules, functions, row level security, migration plan.
-- [`docs/TESTING.md`](docs/TESTING.md): how the database tests work and what they prove.
-- [`docs/REQUIREMENTS_CHECKLIST.md`](docs/REQUIREMENTS_CHECKLIST.md): every requirement with its status and its evidence.
-- [`docs/AGENTIC_TOOLS.md`](docs/AGENTIC_TOOLS.md): every agentic technique used (rules, deny rules, hooks, custom subagents, a skill, reviewer subagents, parallel worktrees, Playwright, MCP) with dates and evidence.
-- [`docs/DEVELOPMENT_LOG.md`](docs/DEVELOPMENT_LOG.md): the development diary, including agent mistakes and open items.
-- [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md): the rules AI coding agents follow in this repository.
-
-## Project status
-
-- **Phase 1** Understand Claude Code and prepare the environment: done
-- **Phase 2** Create the GitHub repository and initialize the project: done
-- **Phase 3** Define requirements and architecture: done
-- **Phase 4** Design the database and relationships: done. Seven migrations are applied to the development project; 9 of the 21 designed tests (T1–T8 and T19, run as 19 Playwright test cases) pass.
-- **Phase 5** Create `CLAUDE.md` and project documentation: done
-- **Phase 6** Design the frontend and reusable UI components: done. Design tokens (light and dark), shadcn/ui components and placeholder page shells; 88 UI checks pass at 375, 768 and 1280 px.
-- **Phase 7** Authentication: built and tested (sign up, log in, log out, forgot and reset password, protected dashboard). 73 unit checks, 129 UI checks and the 19 database tests pass. One manual check with a real inbox is still to be done by the project owner (see below).
-- **Phase 8** Workspace management: built and tested (create, edit, delete with confirmation, public address, time zone with the change warning, plan usage, locked workspaces). 106 unit checks, 146 UI checks and 25 database tests pass (T12, T16 part 1, T17 part 1 and T20 are new).
-- **Phase 9** Resource management: built and tested (create, edit, delete, slot length, capacity, availability switch, plan usage, locked state, and an image per resource: JPG, PNG or WebP up to 2 MB, checked on the server by size and file signature). 144 unit checks, 171 UI checks and 38 database tests pass (T12 resources part, T17 part 2, T18 and T21 are new).
-- **Phase 10** Availability management: built and tested (weekly opening hours per resource, one window per day, `24:00` as end of day, a 7-day slot preview in the workspace's time zone, and a slot library `src/lib/time` that follows the same rules as the database, proved against the live database for the 2026 clock changes of London, New York and Sydney). 209 unit checks, 189 UI checks and 53 database tests pass.
-- **Phase 11** Public booking: built and tested (the public page with a day picker and free times in the workspace's named time zone, a booking request with a private status link, a rate limit per visitor, and privacy rules). Migration 8 added a lock to the rate limit and moved image paths to `<resource_id>/<file>`.
-- **Phase 12** Booking management: built and tested (the booking list with status filter, search and paging, details, approve, reject, cancel and delete, a pending-request badge, and a real dashboard overview).
-- **Phase 13** Dashboard analytics: built and tested (a workspace selector; totals, status distribution and a 30-day chart with days in the workspace's time zone for everyone; monthly chart, resource usage and date-range filters for Pro, decided on the server; every chart has a text table). Built in parallel with Phase 14 (see the development log).
-- **Phase 14** Embed widgets: built and tested (`/dashboard/widget` with theme, Pro-only layout and background colour, a preview and a copyable code; `/embed/<slug>` is the booking flow in an iframe and the only page that may be framed; Pro values are ignored for Free owners).
-- **Phase 15** Stripe billing (test mode): built. Upgrade through Stripe Checkout, Manage/cancel through the Customer Portal, a signed webhook that asks Stripe for the current subscription before saving it, a real billing page, and the downgrade selection (the owner picks 1 workspace and up to 3 resources; nothing is chosen for them). 360 unit checks, 260 UI checks and 92 database tests pass, including the end-to-end tests against real Stripe test objects (one known-flaky bookings test passes when re-run alone; see the development log).
-- **Phase 16** Agentic tools and parallel development: built (three hooks, three custom subagents, a phase skill, a Playwright MCP config and a whole-app security review; Phases 13 and 14 were built at the same time by two background subagents in two git worktrees). Details and evidence: [`docs/AGENTIC_TOOLS.md`](docs/AGENTIC_TOOLS.md). The MCP server and the new subagents need a restart of Claude Code to become active.
-- **Phase 17** Complete testing and bug fixing: done. Security review fixes (subscription handling in the webhook, secret length, body cap), two flaky-test causes fixed, axe-core accessibility scans of every page at phone and desktop width in light and dark, layout fixes found with realistic data, performance measured (about 0.9 s to main content locally), and a [requirements checklist](docs/REQUIREMENTS_CHECKLIST.md) (71 of 85 requirements done, 14 partly, none missing). Final test counts: see [`docs/TESTING.md`](docs/TESTING.md) and the development log.
-- **Phase 18** README, screenshots and submission reflection: planned
-
-## Getting started
+## How to run it locally
 
 These steps set up your own copy against your own Supabase project. Do them **in this order**.
 
-**You need:** Node.js 22 or newer (shadcn/ui's `cn` helper requires Node 22; Next.js itself needs 20.9), npm, Git, and a free [Supabase](https://supabase.com) account. A Stripe test-mode account is only needed from Phase 15.
+**You need:** Node.js 22 or newer, npm, Git, a free [Supabase](https://supabase.com) account, and (only for billing) a Stripe test-mode account.
 
 1. **Clone and install.**
 
    ```powershell
-   git clone <repository-url>
+   git clone https://github.com/raianrunam/slotmate.git
    cd slotmate
    npm install
    ```
 
-2. **Create a Supabase project** for development (keep production separate). Save the database password somewhere safe; the CLI may ask for it in step 4. You will also need the project's **reference** (the short code in the project's address) in step 4. Never put either in a file that is committed.
+2. **Create a Supabase project** for development (keep production separate). Save the database password somewhere safe. You also need the project's **reference** (the short code in the project's address) in step 4. Never put either in a file that is committed.
 
 3. **Create `.env.local`** from the template and fill in the values. `.env.local` is ignored by Git; never commit it.
 
@@ -112,8 +115,8 @@ These steps set up your own copy against your own Supabase project. Do them **in
    - `NEXT_PUBLIC_SUPABASE_URL`: Project Settings > Data API (or the Connect button).
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`: Project Settings > API Keys. The secret key bypasses all security rules: keep it server-side only.
    - `NEXT_PUBLIC_APP_URL`: `http://localhost:3000` while developing.
-   - `RATE_LIMIT_SECRET`: any long random string, for example from `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
-   - `.env.example` now contains the four variables above. `RATE_LIMIT_SECRET` is not in the template yet: add it to your `.env.local` when a phase needs it. `.env.example` also lists `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `STRIPE_PRO_PRICE_ID` (names only, test mode). For the webhook on your own computer run `stripe listen --forward-to localhost:3000/api/stripe/webhook`; it prints the signing secret for `STRIPE_WEBHOOK_SECRET`.
+   - `RATE_LIMIT_SECRET`: a random string of at least 32 characters, for example from `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+   - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRO_PRICE_ID`: Stripe **test-mode** values. For the webhook on your own computer run `stripe listen --forward-to localhost:3000/api/stripe/webhook`; it prints the signing secret.
 
    The full list of names and what each is for: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 7.
 
@@ -131,7 +134,7 @@ These steps set up your own copy against your own Supabase project. Do them **in
    npx supabase db push --remote
    ```
 
-   This creates the 11 tables, the functions, the security policies and the image bucket (migrations 1–7 in `supabase/migrations/`). A migration that has been pushed is never edited; a change is a new migration.
+   This creates the 11 tables, the functions, the security policies and the image bucket (8 migrations in `supabase/migrations/`). A migration that has been pushed is never edited; a change is a new migration.
 
 6. **Start the app.**
 
@@ -139,96 +142,94 @@ These steps set up your own copy against your own Supabase project. Do them **in
    npm run dev
    ```
 
-   Open <http://localhost:3000>. You will see the landing page; the other pages (`/login`, `/dashboard`, `/book/sample`, `/design` and so on) are design shells with sample text and no real data yet.
+   Open <http://localhost:3000>.
 
-7. **Run the checks.**
-
-   ```powershell
-   npm run test:unit
-   npm run test:ui
-   npm run test:db
-   npx tsc --noEmit
-   npx eslint
-   ```
-
-   `npm run test:ui` (first time: `npx playwright install chromium`) builds the app and now also needs `.env.local`: it creates throw-away test owners (`slotmate-test-...@example.com`) through the Supabase admin interface, which sends no email, and deletes them afterwards.
-
-   `npm run test:db` creates and deletes real test users in the Supabase project that `.env.local` points to, so use a development project. Two of its tests (T6 and T7) also call the Supabase CLI, so they need the login and link from step 4 and the migrations from step 5. No browser download is needed. See [`docs/TESTING.md`](docs/TESTING.md).
-
-### Supabase authentication settings (Phase 7)
+### Supabase authentication settings
 
 Set these once in your Supabase dashboard (Authentication). Nothing in the repository changes them.
 
-- **Email confirmation** (Sign In / Providers > Email): on. Sign-ups must confirm their address before they can log in.
-- **Minimum password length** (same page): 8.
-- **Site URL**: `http://localhost:3000` for development.
+- **Email confirmation** (Sign In / Providers > Email): on.
+- **Minimum password length**: 8.
+- **Site URL**: `http://localhost:3000` for development (your production address for a deployed copy).
 - **Redirect URLs** (URL Configuration): `http://localhost:3000/**`. The sign-up and reset emails send the visitor to `/auth/confirm` on this address.
-- **Email templates**: leave the defaults. Editing templates needs your own email (SMTP) server, so SlotMate uses Supabase's default email links with the PKCE flow. **A link must be opened in the same browser that asked for it** (the sign-up or the reset request). Opening it on another device or in another browser shows "This link is invalid or has expired".
-- **Secure password change** (recommended, same page as email): turn it on, so a changed password needs a recent login.
-- Supabase's built-in email service sends only a few emails per hour (A20). The automated tests never send email.
-- **Do not run `supabase config push`** from this repository: `supabase/config.toml` differs from the live project in 15 places and a push would, among other things, turn email confirmation off.
+- **Email templates**: leave the defaults. SlotMate uses Supabase's default email links with the PKCE flow, so **a link must be opened in the same browser that asked for it**.
+- **Secure password change** (recommended): on.
+- Supabase's built-in email service sends only a few emails per hour. The automated tests never send email.
+- **Do not run `supabase config push`** from this repository: `supabase/config.toml` differs from the live project and a push would, among other things, turn email confirmation off.
 
-## Scripts
+Deploying your own copy to Vercel: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-- `npm run dev`: start the development server.
+## Tests
+
+Counts from the last two complete runs on 2026-11-16 (Phase 17b), each: **433 unit checks, 400 UI tests and 94 database tests, none failed and none skipped** (run against the development Supabase project; details and the known flaky cases in [`docs/TESTING.md`](docs/TESTING.md)).
+
+```powershell
+npm run test:unit      # 433 checks: input rules, time maths, source-code guards. No browser, server or database.
+npm run test:ui        # 400 tests in Chromium at 375, 768 and 1280 px, including accessibility scans. Needs .env.local.
+npm run test:db        # 94 tests of the database through real paths. Needs .env.local and the Supabase CLI login and link.
+npx tsc --noEmit       # type check
+npx eslint             # lint
+```
+
+- The first time, run `npx playwright install chromium` for the UI tests.
+- `npm run test:ui` and `npm run test:db` create and delete throw-away test users (`slotmate-test-<random>@example.com`) in the Supabase project that `.env.local` points to. **Use a development project, never production.**
+- Database tests use real paths only: the server key calling real functions, real logged-in owners, and the public key with no login. No direct Postgres connection and no extra grants to make a test pass.
+
+## Other scripts
+
 - `npm run build` and `npm run start`: build and run the production build.
 - `npm run lint`: run ESLint.
-- `npm run test:db`: run the database tests (`playwright test tests/db`).
-- `npm run test:unit`: run the unit checks (input rules, safe redirects, source-code guards). No browser, server or database.
-- `npm run test:ui`: run the user-interface checks in Chromium at 375, 768 and 1280 px, plus the sign-in checks. The first time, run `npx playwright install chromium`. It builds and starts the app on port 3100 and needs `.env.local` (it creates and deletes test owners).
-- `npx tsc --noEmit`: type-check the project.
 - `npx supabase gen types --remote --lang typescript --schema public > src/types/database.types.ts`: regenerate the database types after a migration.
 
-## Folder structure
+## Security model in plain words
 
-What exists today:
+- **Every table has row level security on.** An owner can only see and change their own rows (test T1 tries every table).
+- **Strangers get nothing.** The public key gets no table privileges and cannot call any function; functions meant only for our server are closed to the browser roles (T2 to T7).
+- **Owners cannot change their plan or their usage.** Only our server can, after checking a signed Stripe message and asking Stripe for the current subscription (T5, T15, T16).
+- **No double booking.** The database refuses two pending or approved bookings that overlap on the same resource, tested with simultaneous requests (T8).
+- **Plan limits and allowed status changes live in the database**, so a request that skips our pages cannot break them.
+- **Sessions and secrets.** Session cookies are `Secure` and `HttpOnly` on the production site (checked by hand, 2026-11-16); the secret key and Stripe keys are used only in server code (guarded by tests); the public form has a per-visitor rate limit.
+- The repository is public: no secret key, project reference or personal email address is committed, and the whole Git history was scanned (see [`docs/REQUIREMENTS_CHECKLIST.md`](docs/REQUIREMENTS_CHECKLIST.md) SEC-01).
+
+## Built with Claude Code
+
+SlotMate was built with Claude Code under written rules, with hooks that block risky commands, custom reviewer subagents, a project skill, parallel git worktrees (Phases 13 and 14 were built at the same time by two subagents) and a Playwright MCP server. Every technique, with dates and evidence, is in [`docs/AGENTIC_TOOLS.md`](docs/AGENTIC_TOOLS.md). The diary of what went well and what the agents got wrong is in [`docs/DEVELOPMENT_LOG.md`](docs/DEVELOPMENT_LOG.md).
+
+## Documentation
+
+- [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md): the project brief and the 18 phases.
+- [`docs/PROJECT_REQUIREMENTS.md`](docs/PROJECT_REQUIREMENTS.md): what the app must do.
+- [`docs/REQUIREMENTS_CHECKLIST.md`](docs/REQUIREMENTS_CHECKLIST.md): every requirement with its status and its evidence.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): how the parts fit together and where each security check happens (with diagrams).
+- [`docs/DATABASE.md`](docs/DATABASE.md): tables, rules, functions, row level security, migrations (with an entity diagram).
+- [`docs/TESTING.md`](docs/TESTING.md): how the tests work and what they prove.
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md): how the live site is deployed and the checks run on it.
+- [`docs/AGENTIC_TOOLS.md`](docs/AGENTIC_TOOLS.md): every agentic technique used, with evidence.
+- [`docs/DEVELOPMENT_LOG.md`](docs/DEVELOPMENT_LOG.md): the development diary, including agent mistakes and open items.
+- [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md): the 3 to 4 minute demo script.
+- [`docs/SUBMISSION_CHECKLIST.md`](docs/SUBMISSION_CHECKLIST.md): every course deliverable and its status.
+- [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md): the rules AI coding agents follow in this repository.
+
+## Folder structure
 
 ```
 slotmate/
 ├── AGENTS.md, CLAUDE.md     Rules for AI coding agents
-├── .claude/settings.json    Claude Code settings (blocks reading .env files)
-├── docs/                    Requirements, architecture, database, testing, development log
-├── public/                  Static files (from the Next.js starter)
+├── .claude/                 Claude Code settings, hooks, custom subagents and the phase skill
+├── .mcp.json                Playwright MCP server
+├── docs/                    Requirements, architecture, database, testing, deployment, log, screenshots
+├── public/                  Static files (the embed theme scripts)
 ├── src/
-│   ├── app/                 Next.js pages: landing, auth, dashboard, booking, widget and /design shells
+│   ├── app/                 Next.js pages and routes: landing, auth, dashboard, booking, embed, API
 │   ├── components/          ui/ (shadcn/ui) and the app's own components
-│   ├── features/            One folder per feature area, empty until its phase (a README line each)
-│   ├── lib/                 plans.ts (plan limits for display) and utils.ts
+│   ├── features/            One folder per feature area (auth, workspaces, resources, availability, ...)
+│   ├── lib/                 Shared code: Supabase and Stripe clients, time and slot library, plans
 │   └── types/               TypeScript types generated from the database
-├── supabase/
-│   ├── config.toml          Supabase CLI settings
-│   └── migrations/          The 7 database migrations (SQL, in order)
-├── tests/db/                Database tests (Playwright test runner, no browser)
-├── tests/ui/                User-interface checks (Chromium, three widths)
-├── playwright.config.ts     Database test settings
-├── playwright.ui.config.ts  User-interface test settings
-├── next.config.ts, eslint.config.mjs, tsconfig.json, package.json   Project configuration
+├── supabase/migrations/     The 8 database migrations (SQL, in order)
+├── tests/db, ui, unit/      Database, user-interface and unit tests (Playwright test runner)
+├── next.config.ts, vercel.json, eslint.config.mjs, tsconfig.json, package.json
 └── .env.example             Environment variable names (no values)
 ```
-
-The planned layout of `src/` (features, shared libraries, components) is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 2.
-
-## Security model in plain words
-
-Built and tested today (the database):
-
-- **Every table has row level security on.** An owner can only see and change their own rows. Test T1 tries to read, change and delete another owner's data in every table that holds owner data, and fails as it should.
-- **Strangers get nothing.** The public key on its own gets no table privileges (checked once with a read-only privilege query after the migrations were applied; T3 and T4 test the most sensitive tables), cannot call any function (the audit T6 checks every function, and T2 tries `submit_booking`), and no policy is granted to it (T7 also checks that every table has row level security on). Functions that only our server may call (booking submission, the rate limit, Stripe event memory, the downgrade selection) are closed to the browser roles.
-- **Owners cannot change their plan or their usage.** The subscription is read-only for the owner (T5). By design only our server can change it, after checking a signed Stripe message (the webhook is planned for Phase 15).
-- **No double booking.** The database refuses two pending or approved bookings that overlap on the same resource. Tested so far: the same slot requested by several visitors at the same moment, where exactly one wins (T8). Overlapping slots with different start times and back-to-back slots are planned (T9).
-- **Plan limits and allowed status changes live in the database**, so even a request that skips our web pages cannot break them. (Designed and reviewed; the tests for these are planned.)
-
-Planned in the application: login and sessions, checking Stripe's signature on webhook messages, the per-visitor rate limit on the public form, and keeping secrets on the server only. The repository is public, so no secret key, project reference or personal email address may ever be committed, and `.env.local` is ignored by Git. (The files were checked for these on 2026-11-14.)
-
-## Screenshots and demo
-
-Screenshots and a short demo will be added in Phase 18.
-
-- Dashboard overview: _screenshot placeholder_
-- Public booking page on a phone: _screenshot placeholder_
-- Embed widget on a sample page: _screenshot placeholder_
-- Live site (Stripe in test mode only): https://slotmate-lac.vercel.app — how it is deployed: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
-- Demo video: _placeholder_
 
 ## License
 
