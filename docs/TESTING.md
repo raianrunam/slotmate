@@ -1,10 +1,10 @@
 # SlotMate — Testing
 
-Last updated: 2026-11-15 · Phase 11 · Sources: `docs/DATABASE.md` section 10, `tests/db/`
+Last updated: 2026-11-16 · Phase 17b · Sources: `docs/DATABASE.md` section 10, `tests/db/`, `tests/unit/`, `tests/ui/`
 
 This document says how SlotMate is tested, how to run the tests, what has been proved so far and what has not. The test *design* (what each test must prove) is in `docs/DATABASE.md` section 10; this document tracks the status.
 
-**Status in one line:** 21 of the 21 designed tests are implemented in whole or in part (T1–T8 and T19 from Phases 4–5; T12, T16 part 1, T17 part 1 and T20 from Phase 8; T12 resources part, T17 part 2, T18 and T21 from Phase 9; T10 from Phase 10; T9, T11 and T14 from Phase 11; T13 and T17 part 3 from Phase 12), as 89 database test cases (all pass, none skipped), 333 unit checks and 235 UI checks, run against the development Supabase project on 2026-11-15. Both global teardowns also check that no test user and no test file is left (section 4). The rest are planned. Unit checks (`npm run test:unit`) and user-interface checks (`npm run test:ui`) also exist (sections 6, 6a and 6b).
+**Status in one line:** all 22 designed tests (T1–T22) are implemented and pass; the last two complete runs on 2026-11-16 (Phase 17b) each gave 94 database test cases, 433 unit checks and 400 UI tests, none failed and none skipped, run against the development Supabase project. Both global teardowns also check that no test user and no test file is left (section 4). Only T17 part 4 (account delete) is not built, because the feature does not exist. Unit checks (`npm run test:unit`) and user-interface checks (`npm run test:ui`) are described in section 6 and its sub-sections.
 
 ---
 
@@ -52,9 +52,9 @@ Why: a test that connects as the database owner, or that gets extra rights, can 
 
 The two catalog audits (T6 and T7) are the one place that reads system tables. They do it read-only with `npx supabase db query --remote --read-only`, which runs in a read-only transaction.
 
-## 3. The tests (T1–T21)
+## 3. The tests (T1–T22)
 
-T1 to T21 are defined in `docs/DATABASE.md` section 10. Status as of 2026-11-14:
+T1 to T21 are defined in `docs/DATABASE.md` section 10; T22 was added in Phase 17b from the requirements checklist. Status as of 2026-11-16: every test below is implemented and passing, except the one item marked not built at the end of the list.
 
 **Passing (implemented in `tests/db/`):**
 
@@ -82,13 +82,14 @@ T1 to T21 are defined in `docs/DATABASE.md` section 10. Status as of 2026-11-14:
 - **T14 — Rate limit** (`t14-rate-limit.spec.ts`, 6 tests; Phase 11, burst test on since migration 8). Through `check_rate_limit`: 5 attempts allowed, the 6th and later refused (refused attempts count); another workspace and another visitor are unaffected; it never touches the monthly count; only a 32-byte hash is accepted (an IP address cannot be stored); `anon` and owners cannot call it. **Simultaneous attempts:** 20 parallel calls for one visitor allow exactly 5 (the advisory lock of migration 8); another visitor in the same burst is unaffected. **Not testable through real paths:** the 10-minute window ending and the clean-up of old records (no role can change or read `rate_limit_attempts`).
 
 
-**Planned.** The phase in brackets is a proposal for when each test will be written (alongside the feature it checks); change it if the order of phases changes. Every test is re-run in Phase 17.
+**Added in Phases 12 and 15 (done; the heading used to say "Planned").** All of these were written with the feature they check and are re-run in every full run.
 
 - **T13 — Status changes** (`t13-status-transitions.spec.ts`, 21 tests; Phase 12). Bookings are made by our server (`submit_booking`), the owner changes them as a really logged-in owner. All 16 pairs of the four statuses: the three allowed changes (`pending > approved`, `pending > rejected`, `approved > cancelled`) work; every other real change (for example `approved > pending`, `rejected > approved`, `cancelled > approved`, `pending > cancelled`) is refused with `invalid_status_change` and the booking keeps its status; setting a status to itself is not a change and the trigger lets it pass (a harmless no-op, flagged in migration 4). The owner cannot change any other column (14 attempts, each `42501`, including an allowed status together with a forbidden column, and nothing moves); another owner changes and deletes nothing; the server key cannot change a status (no privilege) and the public key cannot either; two simultaneous changes from `pending` end with exactly one winner; a rejected or cancelled booking frees its time and a pending one holds it (D10).
 - **T15 — Webhook memory** (`t16b-selection.spec.ts`, 1 test; Phase 15). `claim_stripe_event` answers `claimed`, `claimed` again if the first try never finished, `duplicate` once marked; an owner's login cannot call it. The same message sent twice through the real webhook is also tested in section 6h.
 - **T16 part 2 — Downgrade selection** (`t16b-selection.spec.ts`, 2 tests; Phase 15). Pro owner with 2 workspaces and 5 resources, back to Free: everything locked. Seven bad selections are each refused alone with `invalid_selection` and change nothing (a resource of another workspace, four resources, a repeated resource, another owner's workspace, a missing workspace, an empty NULL workspace, a missing resource); the owner's own login cannot call the function (`42501`); a valid choice unlocks exactly that workspace and those resources; upgrading unlocks all. Within the limits: `selection_not_needed`. Part 1 is above. Note: `stripe_events` rows cannot be deleted by any role (the function clears rows older than 30 days), so test messages stay there until then.
 - **T17 part 3 — Deleting bookings keeps the monthly count** (`t17c-booking-delete-usage.spec.ts`, 2 tests; Phase 12). The owner deletes one booking and then the rest: `monthly_usage` stays the same (D13, D19, BILL-07); another owner's delete removes nothing; a deleted booking frees its time and a new request for it counts again.
-- **T17 part 4, the account and Storage-image cases** (account delete). The workspace and resource cascades are done (above and in Phase 9).
+- **T22 — A switched-off resource cannot be booked** (`t22-unavailable-resource.spec.ts`, 2 tests; Phase 17b, RES-06, AVAIL-05). The owner switches a resource off through their own login: `submit_booking` called by the server key answers `not_bookable`, no booking is created and the monthly count does not change; switching it on makes the same request work. Switching a resource off and on again leaves its existing bookings exactly as they were (same rows, status and times).
+- **T17 part 4, account delete: not built.** There is no account-delete feature yet, so there is nothing to test. The workspace and resource cascades are done (above and in Phase 9).
 
 ## 4. Test data and cleanup rules
 
@@ -111,7 +112,8 @@ T1 to T21 are defined in `docs/DATABASE.md` section 10. Status as of 2026-11-14:
 - **T4**: the row counts of `rate_limit_attempts` and `stripe_events` cannot be read through a real path (`service_role` has no privilege on them either), so for those two tables the refused statement itself is the proof.
 - **T6** hard-codes the list of eight server-only functions. Adding a function means updating the test, on purpose.
 - Tests run one file at a time (one worker), against a real remote project, over the network. They are not yet part of an automatic pipeline.
-- Not covered yet: everything in the planned list above, the behaviour of the dashboard and public pages, and the real sign-up form with email confirmation.
+- Not covered by the automated tests: account delete (the feature does not exist), the real sign-up and recovery emails and the real Stripe pages (checked by hand by the owner on 2026-11-15, see `docs/REQUIREMENTS_CHECKLIST.md`), and anything that needs the deployed site. The dashboard and public pages are covered by the UI tests (section 6).
+- **T6 and T7** call the Supabase command-line tool; the helper runs a failed call once more (the queries are read-only). A real problem fails both times.
 - Time and clock changes are not yet tested against the live database (T10).
 
 ## 6. User-interface tests (Phase 6)
@@ -216,9 +218,16 @@ The public booking page and the widget must work fully at 375 px. Those tests li
 - `tests/ui/accessibility.spec.ts` (109 tests): axe-core (WCAG 2.0/2.1 A and AA) on 27 page states (public pages, the booking form with a time chosen, the status page, the widget in light and in its owner-chosen dark theme, sign-in pages and 14 dashboard pages), at 375 and 1280 px, in the light and the dark theme. Any serious or critical violation fails the test; moderate and minor ones are printed. One test proves the scan itself works (an image without alt text and a button without a name must be reported). It found two real problems that were fixed: the hover colour of the default button and badge (4.2:1) and the aria-label of the new Copy link button.
 - `tests/ui/visual.spec.ts` (21 tests): the home page, public booking page, widget, overview, booking list, analytics and billing with realistic data (Pro owner, three resources, bookings in every status) at 375, 768 and 1280 px; fails on horizontal scrolling; saves full-page screenshots to `<home>/slotmate-notes/screenshots/final/`. It found the overview scrolling sideways at 375 px (long booking lines in a grid column without a minimum width) and a booking table whose status column was off screen on a phone; both fixed.
 - `tests/ui/performance.spec.ts` (1 test): time to the real content (not the loading placeholder) of the public booking page, the dashboard overview and the booking list on the production build, 5 runs each, median under 3 s. Phase 17 numbers on the development machine: about 0.9 s median for all three (worst 1.4 s; largest paint about 0.6 s). Indicative only: it depends on the machine and the distance to the Supabase project.
-- `tests/ui/overview-and-copy.spec.ts` (3 tests): DASH-02 (resources count on the overview) and PUB-01 (Copy link of the public address).
+- `tests/ui/overview-and-copy.spec.ts` (5 tests): DASH-02 (resources count on the overview), PUB-01 (Copy link of the public address) and, from Phase 17b, DASH-05 (see 6j).
 - **Flaky tests, real causes.** (1) "badge counts only my pending requests" (`owner_not_found`) and a booking test that failed in a full run: a test file cached its shared owner in a module variable, and a worker that ran tests of another file in between ran this file's `afterAll` (which deletes the owner); the next test of the file reused a deleted owner. Fixed with `sharedPerFile()` in `tests/ui/owners.ts`, whose cache `cleanupOwners` empties. Reproduced before the fix (one failure in a full run). (2) "account menu works with the keyboard" and the image upload tests (including the JPG one): the test pressed Enter or clicked before React had hydrated the page; fixed with `waitForHydration()` in `tests/ui/helpers.ts` (waits for the `__reactProps` marker React puts on hydrated elements). This cause is probable from the code; these tests did not fail in the runs made in Phase 17, so the fix is not proved by a red-to-green run.
 - **The local rate-limit secret** must now be at least 32 characters (the tests pass with the current one).
+
+### 6j. Phase 17b tests (checklist gaps)
+
+- **DASH-05, the overview trend.** `tests/unit/analytics.spec.ts` (5 new checks): the 30 days end on the latest local today among the workspaces; no workspace means UTC; each booking is counted on its own workspace's local date (a booking at 23:30 UTC is the next day in Dhaka), zero filled to 30 entries; a booking outside the window is not counted; the read uses the owner's session only. `tests/ui/overview-and-copy.spec.ts` (2 new tests): a Pro owner with a UTC+14 and a UTC-11 workspace sees both requests on their own local days, 30 table rows, the window ending on the later today, and the note under the chart; a new owner sees "No data yet" and a zero-filled table, and another owner's requests are not counted.
+- **SEC-02, text is plain text.** `tests/ui/xss.spec.ts` (1 test): script tags, an image with an event handler and a bold tag with an id are typed into the workspace name and description, the resource name and description, and a visitor's name and note. The public page, the widget, the status page, the dashboard overview, the workspace list, the resource list, the booking list, the booking details and the analytics page are opened: the text is shown literally, no script ran, no dialog opened, and no element, image or script was made from the text. No page rendered raw HTML.
+- **RES-06 / AVAIL-05:** T22 (section 3).
+- **Flaky tests.** The Supabase command-line call in T6 and T7 failed once in a full run with no detail and passed every time alone: the helper now runs it a second time after a failure (read-only, so safe). The foreign-id image test failed once in a full run (the "Image saved." message did not appear within 10 s) and passed 3 of 3 alone and 12 of 12 in a repeated run: an upload makes several sequential round trips to the remote project, so the waits for the upload result now allow 30 s. The exact cause was not proved; this is the most likely one.
 
 ### 6e. Booking management tests (Phase 12)
 
@@ -246,6 +255,7 @@ The public booking page and the widget must work fully at 375 px. Those tests li
 
 ## 7. Change history
 
+- **2026-11-16 (Phase 17b)** — Added T22, section 6j (DASH-05, SEC-02, flaky fixes), moved T13, T15, T16 part 2 and T17 part 3 out of "Planned", updated the status line and the known limits. Totals: 94 database, 433 unit, 400 UI. Two full runs in a row, all green, nothing flaky.
 - **2026-11-15 (Phase 17)** — Added section 6i. Totals from the final run: 92 database, 428 unit, 397 UI (three full UI runs in a row passed).
 - **2026-11-15 (Phase 15)** — Added T15, T16 part 2 and section 6h (billing). Totals: 92 database, 355 unit, 243 UI passed (10 skipped).
 - **2026-11-15 (Phase 15 review follow-up)** — Stripe tests now run for real; added the handler unit tests, the webhook guard tests and the CI guard; t16b made lazy, exact and self-contained. Totals: 92 database, 360 unit, 260 UI (none skipped; one known-flaky bookings test passed when re-run alone).

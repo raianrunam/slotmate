@@ -273,6 +273,14 @@ Honest record of things the agents got wrong. Mistakes 1–9 happened in Phases 
 
 ## Open items
 
+Owner's manual evidence (recorded in Phase 17b, also in `docs/REQUIREMENTS_CHECKLIST.md`):
+
+- **Real-inbox authentication test** (sign-up email, confirm, login, forgot-password email, reset, new password works, old one refused): YES (manual, owner, 2026-11-15). This closes the "real-inbox check" listed as still to do in Phase 7.
+- **Supabase Auth minimum password length 8 and "Secure password change" ON:** YES (manual, owner, 2026-11-15). This closes the "Secure password change" item below.
+- **Stripe Checkout page showed $9.99 per month:** YES (manual, owner, 2026-11-15).
+- **Customer Portal cancel worked; an immediate cancel in Stripe locked everything and the selection screen unlocked exactly the owner's choice:** YES (manual, owner, 2026-11-15).
+- Still open: that plan switching is off in the Customer Portal (not part of the four checks); the `Secure` cookie flag and the page-load times on the deployed site; the Phase 12, 13 and 14 hand-over lists; a real phone and a screen reader; `npm audit` (see Phase 17b).
+
 Analytics and widget (Phases 13 and 14):
 
 - **Owner decision needed:** the widget preview shows the SAVED options, not unsaved form state (see the Phase 14 entry). Say if a true live preview is wanted; it needs a safe design that cannot bypass the Pro gate.
@@ -368,6 +376,18 @@ Authentication (Phase 7):
 - **Not fixed / open:** DASH-05; test gaps from the re-review (the stored subscription disappearing from Stripe during the extra-cancel path; an owner found through the tag followed by the extra path; an extra subscription for another product); the small window between the last re-read and Stripe's cancel call; the manual lists (real inbox, real phone, screen reader); the `created_at` of demo bookings cannot be back-dated, so the analytics screenshots show one busy day.
 - **Changes:** no migration, no Supabase setting, one devDependency (`@axe-core/playwright`, authorized). Test data and Stripe test objects were created and removed by the tests (the leftover checks passed).
 
+## Phase 17b — Closing the checklist gaps before deployment (2026-11-16)
+
+- **a. DASH-05.** The dashboard overview now has a 30-day "Booking requests" chart across all of the owner's workspaces, with a text table and a note under it. The window ends on the latest local today among the workspaces; each request is counted on the day it was received in ITS OWN workspace's time zone; empty days are zero. It reuses the analytics bar chart and table. Pure maths in `overviewRange` and `overviewDailySeries` (`aggregate.ts`), the read in `getOverviewTrend` (`queries.ts`, the owner's session, only `created_at` and the workspace id). Tests: 5 unit checks, 2 UI tests (see TESTING.md 6j).
+- **b. RES-06 / AVAIL-05.** New database test T22: through the real server-key path `submit_booking` refuses a switched-off resource (`not_bookable`) and creates and counts nothing; switching it off and on leaves existing bookings unchanged.
+- **c. SEC-02.** `tests/ui/xss.spec.ts`: script and HTML typed into names, descriptions and notes is shown as plain text on the public page, widget, status page and the dashboard pages. **No page rendered raw HTML**, so no fix was needed.
+- **d. SEC-01.** The whole Git history (104 commits, every added line) was scanned with patterns for the Supabase and Stripe key prefixes, the JWT shape, `password=` and `service_role`; only commit, file and pattern were looked at, never a value. No real secret: the matches are fake test values, the word `service_role` in documents, migrations and tests, and one npm integrity hash. A check of whether an environment file was ever committed was blocked by the project's own hook and was not done.
+- **e. Flaky tests.** T6 and T7 run their read-only command-line query once more after a failure. The foreign-id image test could not be reproduced (12 of 12 repeated runs passed, 3 of 3 alone); the likely cause is slow remote round trips under the full parallel suite, so its waits for the upload result now allow 30 s. The exact cause is not proved.
+- **f. `npm audit`: not changed, owner decision needed.** It reports 12 findings (2 low, 10 moderate), not 7. All are in development tooling: `shadcn` (CLI) with its `deepmerge`, `ts-morph` and `minimatch`, and `typescript-eslint` (through `eslint-config-next`). The deployed app only imports one CSS file from `shadcn`; none of the vulnerable code runs there. `npm audit fix` changes nothing; the only fix offered is `npm audit fix --force`, which would install `shadcn@1.0.0` (a major downgrade from 4.23). `typescript-eslint` has no fix. Per the instructions, no major version change was made.
+- **g. TESTING.md** brought up to date (T22, section 6j, the heading "Planned" removed, the known limits, the counts).
+- **Final checks:** tsc and eslint clean; the build passes; the test-runner subagent ran everything twice in a row: 433 unit, 400 UI and 94 database tests passed each time, none failed, none skipped (the earlier Phase 17 run had 428 / 397 / 92). Nothing flaky appeared, so no re-runs were needed.
+- **Changes:** no migration, no Supabase setting, no package change. Test data was created and removed by the tests.
+
 ## Change history
 
 - **2026-11-14** — Created (Phase 5) with entries for Phases 1–5.
@@ -381,3 +401,4 @@ Authentication (Phase 7):
 - **2026-11-15** — Added the Phase 15 entry.
 - **2026-11-15** — Added the Phase 16 entry.
 - **2026-11-15** — Added the Phase 17 entry.
+- **2026-11-16** — Added the Phase 17b entry and the owner's manual evidence under Open items.
