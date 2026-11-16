@@ -81,7 +81,6 @@ interface Target {
 const TARGETS: Target[] = [
   // public
   { name: "home", path: () => "/" },
-  { name: "design", path: () => "/design" },
   { name: "not-found", path: () => "/this-page-does-not-exist" },
   { name: "book (public booking page)", path: (f) => `/book/${f.slug}` },
   {

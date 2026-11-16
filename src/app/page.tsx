@@ -9,13 +9,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardDescription, CardHeader } from "@/components/ui/card";
-import { PlaceholderNotice } from "@/components/placeholder-notice";
 import { PricingSection } from "@/components/pricing-section";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 
-// Marketing landing page. Placeholder copy: it has no data access.
+// Marketing landing page. It has no data access.
 
 const FEATURES: readonly { icon: LucideIcon; title: string; text: string }[] = [
   {
@@ -77,37 +77,36 @@ export default function HomePage() {
                 </Button>
               </div>
             </div>
-            {/* Decorative sketch of the booking page (hidden from screen readers). */}
-            <div
-              aria-hidden="true"
-              className="mx-auto w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-sm"
-            >
-              <p className="text-sm font-medium">Meeting room A</p>
-              <p className="text-xs text-muted-foreground">Sample slots, 60 minutes</p>
-              <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
-                {["09:00", "10:00", "11:00", "13:00", "14:00", "15:00"].map((time, i) => (
-                  <span
-                    key={time}
-                    className={
-                      i === 1
-                        ? "rounded-lg bg-primary px-3 py-2 text-center text-primary-foreground"
-                        : "rounded-lg border border-border px-3 py-2 text-center"
-                    }
-                  >
-                    {time}
-                  </span>
-                ))}
+            {/* An illustration, not a control: the slots are plain text, so nothing here is clickable. */}
+            <figure className="mx-auto w-full max-w-md">
+              <div
+                aria-hidden="true"
+                className="select-none rounded-2xl border border-dashed border-border bg-card p-5 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">Meeting room A</p>
+                    <p className="text-xs text-muted-foreground">Free times, 60 minutes each</p>
+                  </div>
+                  <Badge variant="secondary">Example</Badge>
+                </div>
+                <ul className="mt-4 grid grid-cols-3 gap-2 text-sm">
+                  {["09:00", "10:00", "11:00", "13:00", "14:00", "15:00"].map((time) => (
+                    <li
+                      key={time}
+                      className="rounded-lg bg-muted px-3 py-2 text-center text-muted-foreground"
+                    >
+                      {time}
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <div className="mt-4 h-9 rounded-lg bg-primary/10" />
-            </div>
+              <figcaption className="mt-3 text-center text-sm text-muted-foreground">
+                Example: the free times a visitor sees on your public booking page.
+              </figcaption>
+            </figure>
           </div>
         </section>
-
-        <div className="mx-auto max-w-6xl px-4 pt-8 sm:px-6">
-          <PlaceholderNotice phase="Phase 18">
-            The words on this landing page are a draft.
-          </PlaceholderNotice>
-        </div>
 
         <section id="features" aria-labelledby="features-heading" className="scroll-mt-20 py-16 sm:py-20">
           <div className="mx-auto max-w-6xl px-4 sm:px-6">

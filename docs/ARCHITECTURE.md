@@ -109,7 +109,7 @@ The most important line in the picture is the one that is **missing**: there is 
 
 ## 2. Folder structure under `src/`
 
-**This is the planned layout.** As of 2026-11-14 (Phase 6) these exist: `src/app/` (page shells with placeholder content and no data access, plus a `/design` reference page), `src/components/` (`ui/` from shadcn/ui and the app's own components), `src/features/<area>/` (empty, one README line each), `src/lib/` (`utils.ts` and `plans.ts` only) and `src/types/` (generated database types). `src/proxy.ts`, the feature code, and the other `lib/` files are built phase by phase.
+**This is the planned layout.** As of 2026-11-14 (Phase 6) these exist: `src/app/` (page shells with placeholder content and no data access; the `/design` reference page of that phase was removed in Phase 18), `src/components/` (`ui/` from shadcn/ui and the app's own components), `src/features/<area>/` (empty, one README line each), `src/lib/` (`utils.ts` and `plans.ts` only) and `src/types/` (generated database types). `src/proxy.ts`, the feature code, and the other `lib/` files are built phase by phase.
 
 ```
 src/

@@ -47,12 +47,11 @@ const ROUTES: readonly ShellRoute[] = [
   { name: "dashboard-billing", path: "/dashboard/billing" },
   // /book/<slug> and /booking/<code> need real data: see tests/ui/booking.spec.ts (Phase 11).
   // /embed/<slug> needs real data too (an unknown slug is a streamed "not found", which can log a recoverable React message): see tests/ui/embed.spec.ts (Phase 14).
-  { name: "design", path: "/design" },
   { name: "not-found", path: "/this-page-does-not-exist", status: 404 },
 ];
 
 // Routes that are also checked in the dark theme (at phone and desktop width).
-const DARK_ROUTES = ["home", "login", "dashboard", "dashboard-bookings", "design"];
+const DARK_ROUTES = ["home", "login", "dashboard", "dashboard-bookings"];
 
 async function checkPage(
   page: Page,

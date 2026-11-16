@@ -41,7 +41,7 @@ export function PricingSection() {
           />
         </div>
         <p className="mt-6 text-center text-sm text-muted-foreground">
-          Paid plans are not available yet: SlotMate is still being built.
+          Paid plans work, in Stripe test mode: no real money is taken. Pay with Stripe&apos;s test card to try Pro.
         </p>
       </div>
     </section>

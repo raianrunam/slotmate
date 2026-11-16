@@ -144,30 +144,8 @@ test.describe("dashboard navigation", () => {
 });
 
 test.describe("shared components", () => {
-  test("a dialog traps keyboard focus until it is closed", async ({ page }) => {
-    await page.goto("/design");
-    await page.getByRole("button", { name: "Open a dialog" }).click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toBeVisible();
-    for (let i = 0; i < 6; i++) {
-      await page.keyboard.press("Tab");
-      const inside = await page.evaluate(
-        () => document.activeElement?.closest("[role=dialog]") !== null,
-      );
-      expect(inside, "focus stays inside the dialog").toBe(true);
-    }
-  });
-
   // The booking status page's search-engine and referrer rules are tested with a real booking
   // in tests/ui/booking.spec.ts (Phase 11).
-
-  test("the form fields connect labels, hints and errors", async ({ page }) => {
-    await page.goto("/design");
-    const email = page.getByLabel("Email", { exact: true });
-    await expect(email).toHaveAttribute("aria-invalid", "true");
-    await expect(email).toHaveAttribute("aria-describedby", "d-email-error");
-    await expect(page.locator("#d-email-error")).toHaveText("Enter a valid email address.");
-  });
 
   test("form control borders are dark enough to see (about 3:1 or more)", async ({ page }) => {
     await page.emulateMedia({ colorScheme: "light" });
