@@ -227,7 +227,8 @@ Screenshots and a short demo will be added in Phase 18.
 - Dashboard overview: _screenshot placeholder_
 - Public booking page on a phone: _screenshot placeholder_
 - Embed widget on a sample page: _screenshot placeholder_
-- Demo video or live link: _placeholder_
+- Live site (Stripe in test mode only): https://slotmate-lac.vercel.app — how it is deployed: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+- Demo video: _placeholder_
 
 ## License
 

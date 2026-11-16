@@ -388,6 +388,14 @@ Authentication (Phase 7):
 - **Final checks:** tsc and eslint clean; the build passes; the test-runner subagent ran everything twice in a row: 433 unit, 400 UI and 94 database tests passed each time, none failed, none skipped (the earlier Phase 17 run had 428 / 397 / 92). Nothing flaky appeared, so no re-runs were needed.
 - **Changes:** no migration, no Supabase setting, no package change. Test data was created and removed by the tests.
 
+## Phase 18, part 1 — Deployment (2026-11-16)
+
+- **Done:** a separate production Supabase project (`slotmate-prod`, Singapore) with migrations 1–8 pushed after a dry run; a Vercel project `slotmate` connected to GitHub; production variables set by piping values (nothing printed or written); a new production `RATE_LIMIT_SECRET`; a Stripe **test-mode** webhook endpoint with its secret piped into Vercel; production URL **https://slotmate-lac.vercel.app**. Details and results: `DEPLOYMENT.md`.
+- **Checks:** read-only database checks on production (RLS on 11 of 11 tables, no function open to `anon` or `authenticated`, plan limits, bucket) equal development except that `service_role` can run the trigger functions in production (a newer Supabase default, harmless, not changed); security headers on seven paths as designed (Phase 11 finding 10 confirmed on Vercel); a forged `x-forwarded-for` is replaced by Vercel (proved on a throw-away probe project, deleted); speed of `/`, `/login`, `/book/x` about 0.3–0.4 s (one cold first request 3.95 s); no secret in the deployed scripts (19 files scanned for the real values and for patterns).
+- **What went differently:** the CLI needed an explicit consent flag for creating the project; `vercel link` added a token to the local env file and duplicate lines to `.gitignore` (removed); the GitHub connection needed the owner to install the Vercel GitHub app in the browser; my first guess of the production address was wrong and cost one extra deploy; the hook correctly blocked reading the local env file, so the owner ran a small copy script that moves only two named values; the Vercel CLI refused to delete the probe project until the owner approved.
+- **Still open (by hand):** SEC-05 (Secure cookie), one real sign-up email, one test payment on production, timing a real booking page, the dashboard and the booking list on production.
+- **Changes:** no migration written (the existing 8 were pushed to the new project), no Supabase setting changed from the command line (the Auth settings were set by the owner in the dashboard), no package change; added `vercel.json` and `docs/DEPLOYMENT.md`.
+
 ## Change history
 
 - **2026-11-14** — Created (Phase 5) with entries for Phases 1–5.
@@ -402,3 +410,4 @@ Authentication (Phase 7):
 - **2026-11-15** — Added the Phase 16 entry.
 - **2026-11-15** — Added the Phase 17 entry.
 - **2026-11-16** — Added the Phase 17b entry and the owner's manual evidence under Open items.
+- **2026-11-16** — Added the Phase 18 part 1 (deployment) entry.
