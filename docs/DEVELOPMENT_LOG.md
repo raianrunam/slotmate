@@ -421,6 +421,15 @@ Authentication (Phase 7):
 - **Screenshots added** (`docs/screenshots/`): the live landing page (desktop and phone), and, from the local production build with a throw-away Pro owner and demo names (Riverside Studio, Meeting room A, visitor Alex Rahman), the booking status page (pending and approved) and the widget settings page with its preview. The test owner and data were removed by the test harness' teardown. The temporary spec used to take them was not kept.
 - **Changes:** UI text and components under `src/`, tests, docs, images. No database, migration, setting, package or environment change.
 
+## Phase 18, part 4 — Final submission files (2026-11-16)
+
+- **Decision (owner):** no demo video; screenshots instead. The README "Demo video" section was removed and the video is marked "not included" in `docs/SUBMISSION_CHECKLIST.md`; `docs/DEMO_SCRIPT.md` is kept. The submission system accepts only file uploads (max 2 MB per file, max 20 files).
+- **Reflection:** the owner's reflection was saved unchanged as `docs/REFLECTION.md` (275 words including the title, 269 without it).
+- **README:** now has its own sections "How to run the project" (local setup and test commands), "Features: done and not done" (a table by area from the requirements checklist: 82 done, 3 partly, with one honest sentence each for EMBED-06, PERF-01 and PERF-02) and "Agentic tools used and where" (each technique with its file paths and one line on how it was used), and links the reflection.
+- **Submission files** (made with the already-installed Playwright Chromium, `page.pdf`; no new package), kept in the owner's notes folder `slotmate-notes/submission/`, outside the repository because they carry the owner's name and student number: **`SlotMate-Submission.pdf`, 105,386 bytes (5 pages)**: title page (name, student ID, project, GitHub link, live app, Stripe test card), how to run, features done and not done, agentic tools, and the reflection with its word count; **`SlotMate-Screenshots.pdf`, 751,505 bytes (12 pages)**: every image in `docs/screenshots/` with a one-line caption, downscaled to JPEG (the tall phone landing page is laid out in three side-by-side slices cut between cards so its text stays readable). Both are under 2 MB, so no split was needed.
+- **Checked by looking at the rendered pages** (Chromium's PDF viewer, local only): all 5 pages of the submission PDF, and pages 1, 2, 3, 5, 7, 10 and 12 of the screenshots PDF (the other pages use the same layout and their images were checked earlier). Nothing is cut off; the tables are readable; no real email, key or project reference appears (the only address is the shortened throw-away `slotmate-test-...@example.com` in dashboard screenshots). First attempt at rendering used a viewer library loaded from a CDN in a page that also held the PDF with the owner's name; the permission system refused it and it was not retried; the local viewer was used instead.
+- **Changes:** documents only (README, `docs/REFLECTION.md`, `docs/SUBMISSION_CHECKLIST.md`, this log). No code, database, setting or environment change.
+
 ## Change history
 
 - **2026-11-14** — Created (Phase 5) with entries for Phases 1–5.
@@ -436,5 +445,6 @@ Authentication (Phase 7):
 - **2026-11-15** — Added the Phase 17 entry.
 - **2026-11-16** — Added the Phase 17b entry and the owner's manual evidence under Open items.
 - **2026-11-16** — Added the Phase 18 part 1 (deployment) entry.
+- **2026-11-16** — Added the Phase 18 part 4 entry (final submission files, reflection, no demo video).
 - **2026-11-16** — Added the Phase 18 part 3 entry (leftover placeholder text found by the owner in the final review).
 - **2026-11-16** — Added the Phase 18 part 2 entry (owner's production checks, the `xff-probe` mistake, the submission material).

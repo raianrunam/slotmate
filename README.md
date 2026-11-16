@@ -6,7 +6,7 @@ SlotMate is a booking and resource-management web app. An **owner** creates work
 
 This is also a learning project: the owner is learning software engineering and working with AI coding agents. The honest story of what went well and what went wrong is in [`docs/DEVELOPMENT_LOG.md`](docs/DEVELOPMENT_LOG.md).
 
-> **Status: the app is built, tested and deployed (Phases 1 to 17 and the deployment part of Phase 18).** 82 of the 85 requirements are done, 3 are partly done and none is missing (all 74 Must-haves are done); see [`docs/REQUIREMENTS_CHECKLIST.md`](docs/REQUIREMENTS_CHECKLIST.md) for the status and the evidence of each one. The demo video and the written reflection are still to come (see [Demo video](#demo-video) and [`docs/SUBMISSION_CHECKLIST.md`](docs/SUBMISSION_CHECKLIST.md)).
+> **Status: the app is built, tested and deployed (Phases 1 to 17 and the deployment part of Phase 18).** 82 of the 85 requirements are done, 3 are partly done and none is missing (all 74 Must-haves are done); see [`docs/REQUIREMENTS_CHECKLIST.md`](docs/REQUIREMENTS_CHECKLIST.md) for the status and the evidence of each one. No demo video is included: the [screenshots](#screenshots) show the app instead (a demo script exists in [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)). My written reflection is [`docs/REFLECTION.md`](docs/REFLECTION.md), and every course deliverable is listed in [`docs/SUBMISSION_CHECKLIST.md`](docs/SUBMISSION_CHECKLIST.md).
 
 ## Screenshots
 
@@ -56,10 +56,6 @@ Taken from the real app (the landing page from the live site, the rest with thro
 
 ![Billing](docs/screenshots/billing-pro.png)
 
-## Demo video
-
-Demo video: _link to be added_ (a script for it is in [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)).
-
 ## Features
 
 Requirement IDs are in [`docs/PROJECT_REQUIREMENTS.md`](docs/PROJECT_REQUIREMENTS.md).
@@ -79,6 +75,40 @@ Requirement IDs are in [`docs/PROJECT_REQUIREMENTS.md`](docs/PROJECT_REQUIREMENT
 - **Pro** ($9.99 per month): 5 workspaces, 25 resources, 1,000 booking requests per month, advanced analytics (monthly chart, resource usage, date filters) and the customizable widget (grid layout, background colour).
 
 The limits are enforced in the database, not only in the interface. If an owner downgrades, nothing is deleted: the owner chooses one workspace and up to three resources to keep active, and the rest become read-only until the owner deletes some or upgrades.
+
+## Features: done and not done
+
+Status of the 85 requirements in [`docs/REQUIREMENTS_CHECKLIST.md`](docs/REQUIREMENTS_CHECKLIST.md), which gives the evidence (test titles or a dated manual check) for every one. **82 are done, 3 are partly done, none is missing; all 74 Must-haves are done.**
+
+| Area | Name | Requirements | Done | Partly done |
+|---|---|---|---|---|
+| ROLE | Roles (owner, visitor) | 2 | 2 | 0 |
+| AUTH | Authentication | 6 | 6 | 0 |
+| DASH | Dashboard | 6 | 6 | 0 |
+| WORK | Workspace management | 4 | 4 | 0 |
+| RES | Resource management | 8 | 8 | 0 |
+| AVAIL | Availability | 5 | 5 | 0 |
+| PUB | Public booking page | 7 | 7 | 0 |
+| BOOK | Booking management | 8 | 8 | 0 |
+| NOTIF | Notifications | 3 | 3 | 0 |
+| ANLT | Analytics | 6 | 6 | 0 |
+| EMBED | Embed widget | 7 | 6 | 1 |
+| BILL | Subscription and billing | 9 | 9 | 0 |
+| SEC | Security | 6 | 6 | 0 |
+| ISO | Data isolation | 3 | 3 | 0 |
+| PERF | Performance | 3 | 1 | 2 |
+| RESP | Responsive design | 2 | 2 | 0 |
+| | **All** | **85** | **82** | **3** |
+
+**The three partly done requirements** (all three are Nice-to-haves):
+
+| ID | Requirement | What is missing |
+|---|---|---|
+| EMBED-06 | Live widget preview | The preview is the real widget, but it shows the saved options and only updates after "Save widget options", not while the owner is typing (an owner decision on a true live preview is still open). |
+| PERF-01 | Page load time | Measured pages load well under 3 seconds (about 0.3 to 0.4 s for public pages on the live site, about 0.9 s for the dashboard locally), but the dashboard and the booking list were not timed on the live site. |
+| PERF-02 | Lists stay fast | Lists show 20 rows per page and are tested for paging, but there is no test with 1,000 bookings (the architecture document marks that test as optional). |
+
+Known limits and open items: [`docs/REQUIREMENTS_CHECKLIST.md`](docs/REQUIREMENTS_CHECKLIST.md) section 5.
 
 ## Tech stack
 
@@ -106,7 +136,7 @@ The browser never talks to the database. Pages and forms go through our Next.js 
 
 More definitions: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 0 and [`docs/DATABASE.md`](docs/DATABASE.md) section 1.
 
-## How to run it locally
+## How to run the project
 
 These steps set up your own copy against your own Supabase project. Do them **in this order**.
 
@@ -175,7 +205,7 @@ Set these once in your Supabase dashboard (Authentication). Nothing in the repos
 
 Deploying your own copy to Vercel: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-## Tests
+### Run the tests
 
 Counts on 2026-11-16: **435 unit checks and 400 UI tests** (run after the final landing-page change, none failed, none skipped) and **94 database tests** (last run in Phase 17b, twice; not re-run since, because nothing in the database changed) (run against the development Supabase project; details and the known flaky cases in [`docs/TESTING.md`](docs/TESTING.md)).
 
@@ -207,9 +237,21 @@ npx eslint             # lint
 - **Sessions and secrets.** Session cookies are `Secure` and `HttpOnly` on the production site (checked by hand, 2026-11-16); the secret key and Stripe keys are used only in server code (guarded by tests); the public form has a per-visitor rate limit.
 - The repository is public: no secret key, project reference or personal email address is committed, and the whole Git history was scanned (see [`docs/REQUIREMENTS_CHECKLIST.md`](docs/REQUIREMENTS_CHECKLIST.md) SEC-01).
 
-## Built with Claude Code
+## Agentic tools used and where
 
-SlotMate was built with Claude Code under written rules, with hooks that block risky commands, custom reviewer subagents, a project skill, parallel git worktrees (Phases 13 and 14 were built at the same time by two subagents) and a Playwright MCP server. Every technique, with dates and evidence, is in [`docs/AGENTIC_TOOLS.md`](docs/AGENTIC_TOOLS.md). The diary of what went well and what the agents got wrong is in [`docs/DEVELOPMENT_LOG.md`](docs/DEVELOPMENT_LOG.md).
+SlotMate was built with Claude Code. Each technique below is used for real in this repository; dates and proof for each are in [`docs/AGENTIC_TOOLS.md`](docs/AGENTIC_TOOLS.md), and the diary of what went well and what the agents got wrong is in [`docs/DEVELOPMENT_LOG.md`](docs/DEVELOPMENT_LOG.md). My written reflection is in [`docs/REFLECTION.md`](docs/REFLECTION.md).
+
+| Technique | Where | How it was used |
+|---|---|---|
+| Project rules for agents | `AGENTS.md`, `CLAUDE.md` | Read at the start of every session; they hold the approval rules (no pushed-migration edits, no `git add -A`, no `.env` reading, ask before database changes). |
+| Permission deny rules | `.claude/settings.json` | Block the agent from reading `.env*` files, so secrets never reach the conversation or the public repository. |
+| Hooks | `.claude/hooks/protect-migrations.mjs`, `guard-bash.mjs`, `lint-after-edit.mjs`, `lib.mjs`; wired in `.claude/settings.json` | Deny edits to pushed migrations, ask before `supabase db push`, force-push and hard reset, deny commands that read env files, and run ESLint after every `.ts`/`.tsx` edit. 56 unit checks in `tests/unit/hooks.spec.ts`; a hook blocked the agent's own commands in Phase 16. |
+| Custom subagents | `.claude/agents/security-reviewer.md`, `migration-reviewer.md`, `test-runner.md` | Two read-only reviewers for SQL, grants, policies, Server Actions and Stripe, and a test runner that never edits; the test runner produced the Phase 17b test counts. |
+| Project skill | `.claude/skills/slotmate-phase/SKILL.md` | The phase workflow written once: plan, build, tests that can fail, fresh review, fix, docs, small commits, plus the approval rules and known traps. |
+| Independent reviewer subagents | Reports in the owner's notes folder; findings in `docs/DEVELOPMENT_LOG.md` and `docs/AGENTIC_TOOLS.md` section 6 | Phases 4 to 17: after each build a fresh read-only subagent reviewed the real code and documents; almost every review found a real problem, for example the Phase 16 whole-app security review. |
+| Parallel worktrees | Branches `feat/phase13-analytics` and `feat/phase14-widget` (merge commits `baae8aa`, `9c53394`) | Phases 13 and 14 were built at the same time by two subagents in two git worktrees (about seven minutes of overlap) and merged without a conflict; details in `docs/AGENTIC_TOOLS.md` section 7. |
+| Playwright MCP server | `.mcp.json` (`@playwright/mcp@0.0.85`) | Registered in Phase 16; it could not connect in that session, and was used on 2026-11-16 to check the live site at 375 and 1280 px and to take the landing-page screenshots. |
+| Playwright test runner | `tests/unit`, `tests/ui`, `tests/db` | All three test suites run through Playwright: 435 unit checks, 400 UI tests (with axe-core accessibility scans) and 94 database tests. |
 
 ## Documentation
 
@@ -222,7 +264,8 @@ SlotMate was built with Claude Code under written rules, with hooks that block r
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md): how the live site is deployed and the checks run on it.
 - [`docs/AGENTIC_TOOLS.md`](docs/AGENTIC_TOOLS.md): every agentic technique used, with evidence.
 - [`docs/DEVELOPMENT_LOG.md`](docs/DEVELOPMENT_LOG.md): the development diary, including agent mistakes and open items.
-- [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md): the 3 to 4 minute demo script.
+- [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md): the 3 to 4 minute demo script (no video was recorded; screenshots are used instead).
+- [`docs/REFLECTION.md`](docs/REFLECTION.md): my reflection on building SlotMate with Claude Code.
 - [`docs/SUBMISSION_CHECKLIST.md`](docs/SUBMISSION_CHECKLIST.md): every course deliverable and its status.
 - [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md): the rules AI coding agents follow in this repository.
 
