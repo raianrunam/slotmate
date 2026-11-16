@@ -55,6 +55,7 @@ async function giveImage(ownerId: string, resourceId: string): Promise<string> {
 
 // An upload makes several sequential round trips to the remote project (storage, database, clean-up of the old file).
 // Under the full parallel suite that can pass the 10 s default, so waits for the upload result use 30 s.
+const UPLOAD_WAIT = 30_000;
 
 // Clicking before React has hydrated posts the form as a plain page load and the message never appears
 // (Phase 17: the flaky upload tests).
