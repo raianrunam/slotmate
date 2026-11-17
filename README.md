@@ -255,6 +255,7 @@ SlotMate was built with Claude Code. Each technique below is used for real in th
 
 ## Documentation
 
+- [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md): **start here if you are not a programmer.** A plain-words overview of what SlotMate is, how it works, how it was built and what is done and not done. A Bangla translation is in [`docs/PROJECT_OVERVIEW_BN.md`](docs/PROJECT_OVERVIEW_BN.md).
 - [`docs/MASTER_PROMPT.md`](docs/MASTER_PROMPT.md): the project brief and the 18 phases.
 - [`docs/PROJECT_REQUIREMENTS.md`](docs/PROJECT_REQUIREMENTS.md): what the app must do.
 - [`docs/REQUIREMENTS_CHECKLIST.md`](docs/REQUIREMENTS_CHECKLIST.md): every requirement with its status and its evidence.
